@@ -34,6 +34,9 @@ Then loop over every frame i:
       Append the resulting (framenumber, xs, ys) to the overall array
 Add the xs and ys to the existing thunderstorm results table
 (because Mortensen is done relative to a small patch centred on the thunderstorm localisations, so just need to add it on)
+LA: For now we are going to park the thunderstorm layer, we need to generate a simulation of dipoles with different orientations, calculate the centroids
+    coordinates of those dipoles, then pass these coordinates to detect the blobs, calculate the patches, then loop over the blobs and fit. I am going to comment out all 
+    thunderstorm and imageJ parts for now, we can revisit later.
 '''
 
 import diPOLE_python3
@@ -46,28 +49,152 @@ import os
 import time
 
 # from config_params import *
-from thunderstorm_run_macro import run_thunderstorm, reconstruct
+#from thunderstorm_run_macro import run_thunderstorm, reconstruct
 # from thunderstorm_reconstruct_macro import reconstruct
 
-def blob_detect_all_frames(frames_dir, results_path, pixel_width):
+from tifffile import imread
+from argparse import Namespace
+import glob
+import importlib.util
 
-    run_thunderstorm(frames_dir, results_path)
+file_path = "/home/wgq72938/Documents/octo-cryoclem-smlm/smlm/demos/demo_simulate_image_stack.py"
+spec = importlib.util.spec_from_file_location("demo_simulate_image_stack", file_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
 
-    # Import the positions in each frame
-    df = pd.read_csv(results_path)
-    df_selected_columns = df[['frame','x [nm]', 'y [nm]']]
-    f_array = df['frame'].to_numpy()
-    x_array = df['x [nm]'].to_numpy()
-    y_array = df['y [nm]'].to_numpy()
+AppClass = module.Application
 
-    # rescale from nm to px
-    x_array_image_coords = x_array/pixel_width
-    y_array_image_coords = y_array/pixel_width
+class CustomApplication(AppClass):
+    def simulation3(self):
+        print("Custom behavior before simulation3")
+    
+        # Call parent class simulation3
+        result = super().simulation3()
+        print(f"simulation3 raw result: {result}, type: {type(result)}, shape: {result.shape}")
+        
+        # Process result based on its structure
+        if isinstance(result, np.ndarray):
+            if result.ndim == 2:  # Assume 2D array where each row is [x, y]
+                result = [[(x, y, 0.0) for x, y in result]]  # Wrap in a list (single frame)
+            elif result.ndim == 1 and len(result) == 2:  # Single point case
+                result = [[(result[0], result[1], 0.0)]]
+            else:
+                raise ValueError(f"Unexpected result structure: {result}")
 
-    centroids_image_coords = [(int(f), int(x), int(y)) for f, x, y in zip(f_array, x_array_image_coords, y_array_image_coords)]
+        print(f"Processed simulation3 result: {result}")
+        
+        # Check frame count
+        if len(result) < 200:
+            print("Simulation returned insufficient frames")
+            tiff_file = self.wait_for_tiff_file()
+            self.centroids = self.extract_centroids_from_tiff(tiff_file)
+        else:
+            self.centroids = result
+
+        # Log centroids
+        print("Centroids of each dipole:")
+        for frame_idx, frame_centroids in enumerate(self.centroids):
+            print(f"Frame {frame_idx + 1}: {frame_centroids}")
+
+        print("Custom behavior after simulation3")
+        return self.centroids
+    
+    def wait_for_tiff_file(self, timeout=60):
+        """
+        Waits for the image_stack_fixdip.tif file to be created.
+        Returns the full path to the TIFF file.
+        """
+        base_dir = "/home/wgq72938/Documents/Hinterer/mortensen-loop/mortensen/simulation_results"
+        start_time = time.time()
+
+        while True:
+            # Find the latest dataset_* subdirectory
+            subdirs = [d for d in glob.glob(f"{base_dir}/dataset_*") if os.path.isdir(d)]
+            if not subdirs:
+                raise FileNotFoundError("No dataset directories found.")
+
+            latest_subdir = max(subdirs, key=os.path.getmtime)
+            tiff_file = os.path.join(latest_subdir, "image_stack_fixdip.tif")
+
+            # Check if the file exists
+            if os.path.exists(tiff_file):
+                time.sleep(2)
+                return tiff_file
+
+            # Check for timeout
+            elapsed_time = time.time() - start_time
+            if elapsed_time > timeout:
+                raise TimeoutError(f"TIFF file not found within {timeout} seconds.")
+
+            time.sleep(1)  # Wait before checking again
+
+    @staticmethod
+    def extract_centroids_from_tiff(tiff_path, threshold=30, min_area=1):
+        """
+        Reads a TIFF file and extracts centroids from each frame.
+        """
+        # Load the TIFF file
+        tiff_stack = imread(tiff_path)
+        print(f"Loaded TIFF file with {tiff_stack.shape[0]} frames.")
+
+        all_centroids = []
+
+        for frame_idx, frame in enumerate(tiff_stack):
+            print(f"Processing frame {frame_idx + 1}...")
+
+            # Convert the frame to 8-bit (if it's not already)
+            if frame.dtype != np.uint8:
+                frame = cv2.normalize(frame, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+
+            # Convert frame to binary using threshold
+            _, binary_frame = cv2.threshold(frame, threshold, 255, cv2.THRESH_BINARY)
+
+            # Detect contours/blobs
+            contours, _ = cv2.findContours(binary_frame, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            # Extract centroids
+            centroids = []
+            for contour in contours:
+                if cv2.contourArea(contour) >= min_area:  # Filter by minimum area
+                    M = cv2.moments(contour)
+                    if M["m00"] != 0:
+                        cx = M["m10"] / M["m00"]
+                        cy = M["m01"] / M["m00"]
+                        centroids.append((cx, cy, 0.0))  # Adding z=0.0 for consistency
+
+            print(f"  Found {len(centroids)} centroids in frame {frame_idx + 1}.")
+            all_centroids.append(centroids)
+
+        return all_centroids
+    
+# Setup arguments and instantiate the custom application class
+args = Namespace(output="/home/wgq72938/Documents/Hinterer/mortensen-loop/mortensen/simulation_results", other_arg="object")
+app_instance = CustomApplication()
+app_instance._args = args
+
+# Run simulation3
+centroids = app_instance.simulation3()
+
+def blob_detect_all_frames(centroids, pixel_width):
+    """
+    Rescale and structure centroids
+    """
+
+    print("Received centroids: ", centroids)
+    centroids_image_coords = []
+
+    for frame_idx, frame_centroids in enumerate(centroids):
+        for x, y, z in frame_centroids:
+            x_image_coord = int(x / pixel_width)
+            y_image_coord = int(y / pixel_width)
+
+            # Add (frame, x, y, z) tuple to list
+            centroids_image_coords.append((frame_idx + 1, x_image_coord, y_image_coord, z))
 
     return centroids_image_coords
 
+centroids_image_coords = blob_detect_all_frames(centroids, pixel_width=51)
+print(f"Processed centroids (image coordinates): {centroids_image_coords}")
 
 def extract_patches(image, current_frame_number, centroids_image_coords, patch_width):
     """
