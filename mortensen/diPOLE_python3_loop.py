@@ -66,37 +66,37 @@ AppClass = module.Application
 
 class CustomApplication(AppClass):
     def simulation3(self):
-        print("Custom behavior before simulation3")
+        #print("Custom behavior before simulation3")
     
         # Call parent class simulation3
         result = super().simulation3()
-        print(f"simulation3 raw result: {result}, type: {type(result)}, shape: {result.shape}")
+        #print(f"simulation3 raw result: {result}, type: {type(result)}, shape: {result.shape}")
         
         # Process result based on its structure
         if isinstance(result, np.ndarray):
             if result.ndim == 2:  # Assume 2D array where each row is [x, y]
-                result = [[(x, y, 0.0) for x, y in result]]  # Wrap in a list (single frame)
+                result = [[(x, y) for x, y in result]]  # Wrap in a list (single frame)
             elif result.ndim == 1 and len(result) == 2:  # Single point case
-                result = [[(result[0], result[1], 0.0)]]
+                result = [[(result[0], result[1])]]
             else:
                 raise ValueError(f"Unexpected result structure: {result}")
 
-        print(f"Processed simulation3 result: {result}")
+        #print(f"Processed simulation3 result: {result}")
         
         # Check frame count
         if len(result) < 200:
-            print("Simulation returned insufficient frames")
+            #print("Simulation returned insufficient frames")
             tiff_file = self.wait_for_tiff_file()
             self.centroids = self.extract_centroids_from_tiff(tiff_file)
         else:
             self.centroids = result
 
         # Log centroids
-        print("Centroids of each dipole:")
-        for frame_idx, frame_centroids in enumerate(self.centroids):
-            print(f"Frame {frame_idx + 1}: {frame_centroids}")
+        #print("Centroids of each dipole:")
+        #for frame_idx, frame_centroids in enumerate(self.centroids):
+        #    print(f"Frame {frame_idx + 1}: {frame_centroids}")
 
-        print("Custom behavior after simulation3")
+        #print("Custom behavior after simulation3")
         return self.centroids
     
     def wait_for_tiff_file(self, timeout=60):
@@ -104,7 +104,7 @@ class CustomApplication(AppClass):
         Waits for the image_stack_fixdip.tif file to be created.
         Returns the full path to the TIFF file.
         """
-        base_dir = "/home/wgq72938/Documents/Hinterer/mortensen-loop/mortensen/simulation_results"
+        base_dir = "/home/wgq72938/Documents/Hinterer/fixed-dipole-issue/mortensen/simulation_results"
         start_time = time.time()
 
         while True:
@@ -135,7 +135,7 @@ class CustomApplication(AppClass):
         """
         # Load the TIFF file
         tiff_stack = imread(tiff_path)
-        print(f"Loaded TIFF file with {tiff_stack.shape[0]} frames.")
+        #print(f"Loaded TIFF file with {tiff_stack.shape[0]} frames.")
 
         all_centroids = []
 
@@ -160,15 +160,15 @@ class CustomApplication(AppClass):
                     if M["m00"] != 0:
                         cx = M["m10"] / M["m00"]
                         cy = M["m01"] / M["m00"]
-                        centroids.append((cx, cy, 0.0))  # Adding z=0.0 for consistency
+                        centroids.append((cx, cy))
 
-            print(f"  Found {len(centroids)} centroids in frame {frame_idx + 1}.")
+            #print(f"  Found {len(centroids)} centroids in frame {frame_idx + 1}.")
             all_centroids.append(centroids)
 
         return all_centroids
     
 # Setup arguments and instantiate the custom application class
-args = Namespace(output="/home/wgq72938/Documents/Hinterer/mortensen-loop/mortensen/simulation_results", other_arg="object")
+args = Namespace(output="/home/wgq72938/Documents/Hinterer/fixed-dipole-issue/mortensen/simulation_results", other_arg="object")
 app_instance = CustomApplication()
 app_instance._args = args
 
@@ -180,23 +180,23 @@ def blob_detect_all_frames(centroids, pixel_width):
     Rescale and structure centroids
     """
 
-    print("Received centroids: ", centroids)
+    #print("Received centroids: ", centroids)
     centroids_image_coords = []
 
     for frame_idx, frame_centroids in enumerate(centroids):
-        for x, y, z in frame_centroids:
+        for x, y in frame_centroids:
             x_image_coord = int(x / pixel_width)
             y_image_coord = int(y / pixel_width)
 
-            # Add (frame, x, y, z) tuple to list
-            centroids_image_coords.append((frame_idx + 1, x_image_coord, y_image_coord, z))
+            # Add (frame, x, y) tuple to list
+            centroids_image_coords.append((frame_idx + 1, x_image_coord, y_image_coord))
 
     return centroids_image_coords
 
 centroids_image_coords = blob_detect_all_frames(centroids, pixel_width=51)
-print(f"Processed centroids (image coordinates): {centroids_image_coords}")
+#print(f"Processed centroids (image coordinates): {centroids_image_coords}")
 
-def extract_patches(image, current_frame_number, centroids_image_coords, patch_width):
+def extract_patches(tiff_stack, centroids_image_coords, patch_width):
     """
     Extract patches around given centroids from the image.
 
@@ -208,52 +208,98 @@ def extract_patches(image, current_frame_number, centroids_image_coords, patch_w
     Returns:
         list of ndarray: A list of extracted patches, or None for out of bounds.
     """
-    patches = []
+    all_patches = []
 
-    for centroid in centroids_image_coords:
-        f, x, y = centroid
+    for frame_idx, frame in enumerate(tiff_stack, start=1):
+        patches=[]
 
-        # only operate on the current frame number
-        if f == current_frame_number:
+        for centroid in centroids_image_coords:
+            f, x, y = centroid
 
-            # Define the coordinates for the patch
-            x_start = x - patch_width // 2
-            x_end = x + patch_width // 2
-            y_start = y - patch_width // 2
-            y_end = y + patch_width // 2
+            # only operate on the current frame number
+            if f == frame_idx:
 
-            # # if you decide to ignore out-of-bounds patches:
-            # # Check for out-of-bounds
-            # if x_start >= 0 and x_end <= image.shape[1] and y_start >= 0 and y_end <= image.shape[0]:
-            #     # Extract the patch
-            #     patch = image[y_start:y_end, x_start:x_end]
-            #     patches.append(patch)
+                # Define the coordinates for the patch
+                x_start = x - patch_width // 2
+                x_end = x + patch_width // 2
+                y_start = y - patch_width // 2
+                y_end = y + patch_width // 2
 
-            # if you decide to pad out-of-bounds patches:
-            # Determine the padding needed for each side
-            pad_left = max(0, -x_start)  # How many pixels need padding on the left
-            pad_right = max(0, x_end - image.shape[1])  # How many pixels need padding on the right
-            pad_top = max(0, -y_start)  # How many pixels need padding on the top
-            pad_bottom = max(0, y_end - image.shape[0])  # How many pixels need padding on the bottom
+                # # if you decide to ignore out-of-bounds patches:
+                # # Check for out-of-bounds
+                # if x_start >= 0 and x_end <= image.shape[1] and y_start >= 0 and y_end <= image.shape[0]:
+                #     # Extract the patch
+                #     patch = image[y_start:y_end, x_start:x_end]
+                #     patches.append(patch)
 
-            # Apply padding to the image
-            padded_image = np.pad(image,
-                                  ((pad_top, pad_bottom), (pad_left, pad_right)),
-                                  mode='constant', constant_values=0)
+                # if you decide to pad out-of-bounds patches:
 
-            # Recalculate the new patch coordinates based on the padded image
-            x_start_padded = x_start + pad_left
-            x_end_padded = x_end + pad_left
-            y_start_padded = y_start + pad_top
-            y_end_padded = y_end + pad_top
+                # Determine the padding needed for each side
+                pad_left = max(0, -x_start)  # How many pixels need padding on the left
+                pad_right = max(0, x_end - frame.shape[1])  # How many pixels need padding on the right
+                pad_top = max(0, -y_start)  # How many pixels need padding on the top
+                pad_bottom = max(0, y_end - frame.shape[0])  # How many pixels need padding on the bottom
 
-            # Extract the patch from the padded image
-            patch = padded_image[y_start_padded:y_end_padded, x_start_padded:x_end_padded]
-            patches.append(patch)
+                # Apply padding to the image
+                padded_frame = np.pad(frame,
+                                    ((pad_top, pad_bottom), (pad_left, pad_right)),
+                                    mode='constant', constant_values=0)
 
+                # Recalculate the new patch coordinates based on the padded image
+                x_start_padded = x_start + pad_left
+                x_end_padded = x_end + pad_left
+                y_start_padded = y_start + pad_top
+                y_end_padded = y_end + pad_top
+
+                # Extract the patch from the padded image
+                patch = padded_frame[y_start_padded:y_end_padded, x_start_padded:x_end_padded]
+                patches.append(patch)
+
+        # Append patches from this frame to the list of all patches        
+        all_patches.extend(patches)
+
+        print(f"Extracted {len(patches)} patches from frame {frame_idx}")
+                
     return patches
 
+# Ensure centroids_image_coords is in the correct format
+print(f"Centroids Image Coordinates: {centroids_image_coords[:10]}")  # Print the first 10 for debugging
 
+# Check if centroids_image_coords is a list of tuples with four elements (frame, x, y)
+for entry in centroids_image_coords:
+    if not (isinstance(entry, tuple) and len(entry) == 3):
+        raise ValueError(f"Invalid centroid format: {entry}")
+print("All centroids are valid")
+
+# Load the TIFF file
+try:
+    tiff_file = app_instance.wait_for_tiff_file()
+    tiff_stack = imread(tiff_file)
+    print(f"Loaded TIFF file: {tiff_file} with {tiff_stack.shape[0]} frames.")
+
+    # Ensure centroids are within valid frame range
+    num_frames = tiff_stack.shape[0]
+    centroids_image_coords = [
+        (frame, x, y) for frame, x, y in centroids_image_coords if 1 <= frame <= num_frames
+    ]
+    print(f"Validated Centroids: {centroids_image_coords[:10]}")
+
+    # Extract patches for the first frame as a test
+    patch_width = 12
+    current_frame = tiff_stack[0]  # First frame
+    all_patches = extract_patches(tiff_stack, centroids_image_coords, patch_width)
+
+    print(f"Total patches extracted {len(all_patches)}")
+
+except FileNotFoundError as e:
+    print(f"Error: {e}")
+except ValueError as e:
+    print(f"Invalid centroids: {e}")
+except Exception as e:
+    print(f"An unexpected error occurred: {e}")
+
+
+'''
 def mortensen_single_frame(image_path,
                            current_frame_number,
                            centroids_image_coords,
@@ -324,17 +370,17 @@ def mortensen_single_frame(image_path,
 # Mortensen run params
 # --------------------
 # Experimental parameters
-peak_emission_wavelength = 580.0 # Peak emission wavelength
+peak_emission_wavelength = 500.0 # Peak emission wavelength
 ref_ind_immersion = 1.52 # RI of immersion oil/optics
 ref_ind_imaging = 1.0 # Refractive index of imaging medium (typically that of air, i.e. np = 1.0)
-ref_ind_buffer = 1.33 # RI of buffer
-numerical_aperture = 1.49 # Numerical aperture of objective
-magnification = 250.0 # Magnification of composite microscope
-pixel_width = 51.2 # Pixel width (nm per px)
+ref_ind_buffer = 1.31 # RI of buffer
+numerical_aperture = 2.17 # Numerical aperture of objective
+magnification = 215.0 # Magnification of composite microscope
+pixel_width = 51.0 # Pixel width (nm per px)
 
 # PSF parameters
 photon_number = 10000.0 # Photon number?
-background_level = 5.0 # Background level?
+background_level = 1.0 # Background level?
 mu = 0.1 # Probe location?
 nu = 0.1 # ...
 phi = 2 * np.pi / 3.0 # inclination
@@ -347,17 +393,17 @@ sigma_noise = 2 #12.6
 Sfloor = 300.0
 gain = 1.0 / inverse_gain
 
-patch_width = 12 # size of NxN pixel patch around blob centroid to consider
+patch_width = 15 # size of NxN pixel patch around blob centroid to consider
 # --------------------
 
 # Initial thunderstorm run to get blob location
 
 # Load data
-frames_dir = '/home/tfq96423/Documents/cryoCLEM/dipole-issue/mortensen-loop/ASIL240923C05_50.ome.tif-frames/'
-results_path = '/home/tfq96423/Documents/cryoCLEM/dipole-issue/mortensen-loop/thunderstorm_results.csv'
+frames_dir = '/home/wgq72938/Documents/Hinterer/dipole-issue/mortensen-loop/simulation_results/dataset_241121_1638/image_stack_fixdip.tif'
+results_path = '/home/wgq72938/Documents/Hinterer/dipole-issue/mortensen-loop/simulation_results/Fit_results.csv'
 
 # find centroids using gaussian fitting thunderstorm
-centroids_image_coords = blob_detect_all_frames(frames_dir, results_path, pixel_width)
+centroids_image_coords = blob_detect_all_frames(centroids, pixel_width)
 
 # get frames
 frame_paths = [os.path.join(frames_dir, f) for f in os.listdir(frames_dir) if f.endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif'))]
@@ -442,3 +488,4 @@ df.to_csv(mortensen_results_path, index=False)
 # # show in napari
 # command2 = f"napari {output_img_path}"
 # subprocess.run(command2, shell=True, check=True)
+'''
