@@ -46,6 +46,7 @@ import cv2
 import pandas as pd
 import subprocess
 import os
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
 import time
 
 # from config_params import *
@@ -56,6 +57,9 @@ from tifffile import imread
 from argparse import Namespace
 import glob
 import importlib.util
+import matplotlib.pyplot as plt
+from matplotlib.patches import Circle, Rectangle
+matplotlib.use("Agg")
 
 file_path = "/home/wgq72938/Documents/octo-cryoclem-smlm/smlm/demos/demo_simulate_image_stack.py"
 spec = importlib.util.spec_from_file_location("demo_simulate_image_stack", file_path)
@@ -84,7 +88,7 @@ class CustomApplication(AppClass):
         #print(f"Processed simulation3 result: {result}")
         
         # Check frame count
-        if len(result) < 200:
+        if len(result) < 1000:
             #print("Simulation returned insufficient frames")
             tiff_file = self.wait_for_tiff_file()
             self.centroids = self.extract_centroids_from_tiff(tiff_file)
@@ -94,7 +98,7 @@ class CustomApplication(AppClass):
         # Log centroids
         #print("Centroids of each dipole:")
         #for frame_idx, frame_centroids in enumerate(self.centroids):
-        #    print(f"Frame {frame_idx + 1}: {frame_centroids}")
+        #    print(f"Frame {frame_idx + 1}, Centroids: {self.centroids}")
 
         #print("Custom behavior after simulation3")
         return self.centroids
@@ -129,18 +133,18 @@ class CustomApplication(AppClass):
             time.sleep(1)  # Wait before checking again
 
     @staticmethod
-    def extract_centroids_from_tiff(tiff_path, threshold=30, min_area=1):
+    def extract_centroids_from_tiff(tiff_path, threshold=15, min_area=4):
         """
         Reads a TIFF file and extracts centroids from each frame.
         """
         # Load the TIFF file
         tiff_stack = imread(tiff_path)
-        print(f"Loaded TIFF file with {tiff_stack.shape} frames.")
+        #print(f"Loaded TIFF file with {tiff_stack.shape} frames.")
 
         all_centroids = []
 
         for frame_idx, frame in enumerate(tiff_stack):
-            print(f"Processing frame {frame_idx + 1}...")
+            #print(f"Processing frame {frame_idx + 1}...")
 
             # Convert the frame to 8-bit (if it's not already)
             if frame.dtype != np.uint8:
@@ -191,10 +195,451 @@ def blob_detect_all_frames(centroids, pixel_width):
             # Add (frame, x, y) tuple to list
             centroids_image_coords.append((frame_idx + 1, x_image_coord, y_image_coord))
 
+            # Check if the coordinates are within image bounds
+            #if 0 <= x_image_coord < 250 and 0 <= y_image_coord < 250:
+            #    centroids_image_coords.append((frame_idx + 1, x_image_coord, y_image_coord))
+            #else:
+                #print(f"Skipping centroid: Frame={frame_idx + 1}, x={x_image_coord}, y={y_image_coord} (Out of bounds)")
+
+    # Debugging output
+    print(f"Total valid centroids: {len(centroids_image_coords)}")
+    if len(centroids_image_coords) > 0:
+        print(f"Sample valid centroid: {centroids_image_coords[0]}")
+
     return centroids_image_coords
 
-centroids_image_coords = blob_detect_all_frames(centroids, pixel_width=51)
+centroids_image_coords = blob_detect_all_frames(centroids, pixel_width=8)
 #print(f"Processed centroids (image coordinates): {centroids_image_coords}")
+
+
+def extract_patches(tiff_stack, centroids_image_coords, patch_width):
+    """
+    Extract patches around centroids from the frames in a TIFF stack.
+    Args:
+        tiff_stack (ndarray): 3D array where each slice is a frame.
+        centroids_image_coords (list of tuple): List of (frame, x, y) coordinates.
+        patch_width (int): The width of the square patch to extract.
+    Returns:
+        list: Extracted patches.
+    """
+    all_patches = []
+
+    for frame_idx, frame in enumerate(tiff_stack, start=1):
+        patches = []
+
+        for centroid in centroids_image_coords:
+            frame_number, x, y = centroid
+
+        for centroid in centroids_image_coords:
+            if not (len(centroid) == 3 and isinstance(centroid[0], int)):
+                raise ValueError(f"Invalid centroid format: {centroid}")
+
+            # Skip centroids that don't belong to the current frame
+            if frame_number != frame_idx:
+                continue
+
+            # Define patch bounds
+            x_start = x - patch_width // 2
+            x_end = x + patch_width // 2
+            y_start = y - patch_width // 2
+            y_end = y + patch_width // 2
+
+            # Calculate padding needed
+            pad_left = max(0, -x_start)
+            pad_right = max(0, x_end - frame.shape[1])
+            pad_top = max(0, -y_start)
+            pad_bottom = max(0, y_end - frame.shape[0])
+
+            # Apply padding to the frame
+            padded_frame = np.pad(
+                frame,
+                ((pad_top, pad_bottom), (pad_left, pad_right)),
+                mode='constant',
+                constant_values=0,
+            )
+
+            # Recalculate patch coordinates in the padded frame
+            x_start_padded = max(0, x_start) + pad_left
+            x_end_padded = min(frame.shape[1], x_end) + pad_left
+            y_start_padded = max(0, y_start) + pad_top
+            y_end_padded = min(frame.shape[0], y_end) + pad_top
+
+            # Extract the patch
+            patch = padded_frame[y_start_padded:y_end_padded, x_start_padded:x_end_padded]
+            patches.append(patch)
+        
+    return all_patches
+
+# Ensure centroids_image_coords is in the correct format
+print(f"Centroids Image Coordinates: {centroids_image_coords[:10]}")  # Print the first 10 for debugging
+
+# Check if centroids_image_coords is a list of tuples with four elements (frame, x, y)
+for entry in centroids_image_coords:
+    if not (isinstance(entry, tuple) and len(entry) == 3):
+        raise ValueError(f"Invalid centroid format: {entry}")
+print("All centroids are valid")
+
+# Load the TIFF file
+try:
+    tiff_file = app_instance.wait_for_tiff_file()
+    tiff_stack = imread(tiff_file)
+    print(f"Loaded TIFF file: {tiff_file} with {tiff_stack.shape[0]} frames.")
+
+    print(f"Centroids before filtering: {centroids_image_coords[:10]}")  # Debug output
+
+    num_frames = tiff_stack.shape[0]
+    centroids_image_coords = [
+        (frame, x, y) for frame, x, y in centroids_image_coords if 1 <= frame <= num_frames
+    ]
+    print(f"Filtered centroids (valid frames): {centroids_image_coords[:10]}")  # Debug output
+
+    # Extract patches
+    patch_width = 12
+    current_frame = tiff_stack[0]
+    all_patches = extract_patches(tiff_stack, centroids_image_coords, patch_width)
+    print(f"Total patches extracted: {len(all_patches)}")
+
+    # Extract patches for the first frame as a test
+    #patch_width = 12
+    #current_frame = tiff_stack[0]  # First frame
+    #all_patches = extract_patches(tiff_stack, centroids_image_coords, patch_width)
+
+    #print(f"Total patches extracted {len(all_patches)}")
+
+except FileNotFoundError as e:
+    print(f"Error: {e}")
+except ValueError as e:
+    print(f"Invalid centroids: {e}")
+except Exception as e:
+    print(f"An unexpected error occurred: {e}")
+
+
+def draw_detections_on_frame(frame, centroids, patch_width):
+    """
+    Draw circles around centroids and squares for patches on a frame.
+    """
+    frame_with_detections = frame.copy()
+    
+    for cx, cy in centroids:
+        # Convert to integer for OpenCV
+        cx, cy = int(cx), int(cy)
+        
+        # Draw circle
+        cv2.circle(frame_with_detections, (cx, cy), radius=5, color=(255, 0, 0), thickness=1)
+        
+        # Draw square (patch)
+        x_start = max(0, cx - patch_width // 2)
+        x_end = min(frame.shape[1], cx + patch_width // 2)
+        y_start = max(0, cy - patch_width // 2)
+        y_end = min(frame.shape[0], cy + patch_width // 2)
+        cv2.rectangle(frame_with_detections, (x_start, y_start), (x_end, y_end), color=(0, 255, 0), thickness=1)
+
+    return frame_with_detections
+
+for frame_idx, frame in enumerate(tiff_stack):
+    current_centroids = centroids[frame_idx]  # Centroids for this frame
+    frame_with_detections = draw_detections_on_frame(frame, current_centroids, patch_width=12)
+    
+    # Save or display the frame
+    output_path = f"frame_{frame_idx + 1}_detections.tif"
+    cv2.imwrite(output_path, frame_with_detections)
+    print(f"Saved frame with detections: {output_path}")
+
+
+########## FIT ############
+def mortensen_single_frame(image,
+                           current_frame_number,
+                           centroids_image_coords,
+                           patch_width,
+                           peak_emission_wavelength,
+                           pixel_width,
+                           magnification,
+                           numerical_aperture,
+                           ref_ind_immersion,
+                           ref_ind_imaging,
+                           ref_ind_buffer,
+                           initvals,
+                           initpix,
+                           deltapix,
+                           Sfloor,
+                           inverse_gain,
+                           sigma_noise):
+    """
+    Perform Mortensen estimation on a single frame given the extracted centroids.
+    """
+    # Subtract the background roughly
+    image = np.clip(image - np.mean(image), 0, 255).astype(np.uint8)
+
+    # Validate centroids (skip those that are too close to the edges for a full patch)
+    valid_centroids = []
+    for frame, cx, cy in centroids_image_coords:
+        #print(f"Checking centroid: Frame={frame}, x={cx}, y={cy}")
+        # Ensure centroid is within bounds such that the patch doesn't go out of the image.
+        if patch_width // 2 <= cx < image.shape[1] - patch_width // 2 and \
+           patch_width // 2 <= cy < image.shape[0] - patch_width // 2:
+            valid_centroids.append((frame, cx, cy))  # Store as (frame, x, y)
+        #else:
+        #    print(f"Skipping centroid: Frame={frame}, x={cx}, y={cy} (Out of bounds)")
+
+    if len(valid_centroids) == 0:
+        print(f"No valid centroids in frame {current_frame_number}.")
+        return [], [], [], [], []
+
+    # Extract 12x12 patches around each valid centroid
+    blob_patches = extract_patches(image, valid_centroids, patch_width)
+
+    # Check patch extraction
+    if len(blob_patches) == 0:
+        #print(f"No patches extracted in frame {current_frame_number}.")
+        return [], [], [], [], []
+
+    # Check patch dimensions
+    for i, patch in enumerate(blob_patches, 1):
+        print(f"Patch {i}: Shape = {patch.shape}")
+        if patch.shape != (patch_width, patch_width):
+            print(f"Skipping patch {i}: Invalid shape {patch.shape}")
+            continue
+
+    # Create an instance of MLEwT
+    track = diPOLE_python3.MLEwT(
+        peak_emission_wavelength,
+        pixel_width,
+        magnification,
+        numerical_aperture,
+        ref_ind_immersion,
+        ref_ind_imaging,
+        ref_ind_buffer,
+        initvals,
+        initpix,
+        deltapix,
+        Sfloor,
+        inverse_gain,
+        sigma_noise
+    )
+
+    # Process each patch
+    x_list, y_list, theta_list, phi_list, covariance_list = [], [], [], [], []
+    for i, blob in enumerate(blob_patches, 1):
+        try:
+            x_est, y_est, theta_est, phi_est, cov_mat = track.Estimate(blob)
+            x_list.append(x_est)
+            y_list.append(y_est)
+            theta_list.append(theta_est)
+            phi_list.append(phi_est)
+            covariance_list.append(cov_mat)
+            print(f"Blob {i}: x={x_est}, y={y_est}, theta={theta_est}, phi={phi_est}")
+        except Exception as e:
+            print(f"Error processing blob {i}: {e}")
+
+    return x_list, y_list, theta_list, phi_list, covariance_list
+
+# --------------------
+# Mortensen run params
+# --------------------
+# Experimental parameters
+peak_emission_wavelength = 500.0 # Peak emission wavelength
+ref_ind_immersion = 1.52 # RI of immersion oil/optics
+ref_ind_imaging = 1.0 # Refractive index of imaging medium (typically that of air, i.e. np = 1.0)
+ref_ind_buffer = 1.31 # RI of buffer
+numerical_aperture = 2.17 # Numerical aperture of objective
+magnification = 215.0 # Magnification of composite microscope
+pixel_width = 25.6 # Pixel width (nm per px)
+
+# PSF parameters
+photon_number = 1000000.0 # Photon number?
+background_level = 1.0 # Background level?
+mu = 0.1 # Probe location?
+nu = 0.1 # ...
+phi = 2 * np.pi / 3.0 # inclination
+theta = 0.5 # azimuthal angle
+deltaz = -30.0 # Distance from design focal plane
+
+# EMCCD parameters
+inverse_gain = 1./100.
+sigma_noise = 2 #12.6
+Sfloor = 300.0
+gain = 1.0 / inverse_gain
+
+patch_width = 12 # size of NxN pixel patch around blob centroid to consider
+# --------------------
+
+# Initial thunderstorm run to get blob location
+
+# Load data
+tiff_file = app_instance.wait_for_tiff_file()
+tiff_stack = imread(tiff_file)
+#print(tiff_stack)
+frame_paths = [tiff_stack[i] for i in range(tiff_stack.shape[0])]
+num_frames = tiff_stack.shape[0]
+
+# Directory where results will be stored
+results_dir = '/home/wgq72938/Documents/Hinterer/fixed-dipole-issue/mortensen/simulation_results'
+
+# Generate results filename with a timestamp
+current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")  # Format: YYYYMMDD_HHMMSS
+results_filename = f"Fit_results_{current_time}.csv"
+
+# Combine the directory and filename to create the full results path
+results_path = os.path.join(results_dir, results_filename)
+
+
+# Ensure the results directory exists, if not, create it
+if not os.path.exists(results_dir):
+    os.makedirs(results_dir)
+
+print(f"Results will be saved to: {results_path}")
+
+# find centroids using gaussian fitting thunderstorm
+centroids_image_coords = blob_detect_all_frames(centroids, pixel_width)
+
+# Debuggin centroids and patches
+print(f"Frame dimensions: {frame.shape}")
+for i, (frame_num, x, y) in enumerate(centroids_image_coords):
+    #print(f"Centroid {i + 1}: Frame {frame_num}, X: {x}, Y: {y}")
+    if not (0 <= y < frame.shape[0] and 0 <= x < frame.shape[1]):
+        print(f"Centroid out of bounds: ({x}, {y}) for frame size {frame.shape}")
+
+
+
+# Initial guess params
+initvals = array([mu, nu, background_level, photon_number, phi, theta, deltaz]) # initial PSF values
+deltapix = patch_width / 2 # centre of patch around blob
+initpix = (deltapix, deltapix) # centre of patch around blob
+
+# Mortensen run on each blob in each frame
+x_ests, y_ests, theta_ests, phi_ests, covariance_ests = [], [], [], [], []
+for i in range(tiff_stack.shape[0]):
+    start_frame = time.time() # record the start time for this frame
+
+    image = tiff_stack[i]
+
+    if len(image.shape) == 3:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    #print(f"Processing frame {i + 1}/{tiff_stack.shape[0]}, image shape: {image.shape}")
+
+    single_frame_results = list(mortensen_single_frame(image=image,
+                               current_frame_number=i+1, 
+                               centroids_image_coords=centroids_image_coords, 
+                               patch_width=patch_width,
+                               peak_emission_wavelength=peak_emission_wavelength,
+                               pixel_width=pixel_width,
+                               magnification=magnification,
+                               numerical_aperture=numerical_aperture,
+                               ref_ind_immersion=ref_ind_immersion,
+                               ref_ind_imaging=ref_ind_imaging,
+                               ref_ind_buffer=ref_ind_buffer,
+                               initvals=initvals,
+                               initpix=initpix,
+                               deltapix=deltapix,
+                               Sfloor=Sfloor,
+                               inverse_gain=inverse_gain,
+                               sigma_noise=sigma_noise,))
+    
+    #print(f"Frame {i+1}: {single_frame_results}")
+
+    x_ests.append(single_frame_results[0])
+    y_ests.append(single_frame_results[1])
+    theta_ests.append(single_frame_results[2])
+    phi_ests.append(single_frame_results[3])
+    covariance_ests.append(single_frame_results[4])
+
+    end_frame = time.time()
+    elapsed_time_frame = end_frame - start_frame
+    elapsed_time_frame = elapsed_time_frame/60
+    #print(f"Time: {elapsed_time_frame:.4f} minutes on this frame")
+
+# make sure list is flat, because it needs to be for results table
+x_ests = [item for sublist in x_ests for item in sublist]
+y_ests = [item for sublist in y_ests for item in sublist]
+theta_ests = [item for sublist in theta_ests for item in sublist]
+phi_ests = [item for sublist in phi_ests for item in sublist]
+covariance_ests = [item for sublist in covariance_ests for item in sublist]
+
+# Ensure the results directory exists
+if not os.path.exists(results_dir):
+    os.makedirs(results_dir)
+
+# Save all results into a single CSV file
+results = pd.DataFrame({
+    'x [nm]': x_ests,
+    'y [nm]': y_ests,
+    'theta': theta_ests,
+    'phi': phi_ests,
+    'covariance': covariance_ests
+})
+results.to_csv(results_path, index=False)
+print(f"Results saved to: {results_path}")
+
+# Read and update Thunderstorm-style results
+if not os.path.exists(results_path):
+    print(f"Creating a dummy results file at: {results_path}")
+    dummy_df = pd.DataFrame({"x [nm]": [], "y [nm]": []})  # Replace with actual structure
+    dummy_df.to_csv(results_path, index=False)
+
+try:
+    print(f"Reading results file: {results_path}")
+    df = pd.read_csv(results_path)
+except FileNotFoundError as e:
+    print(f"Error: {e}")
+    raise
+
+if len(x_ests) != len(df) or len(y_ests) != len(df):
+    raise ValueError("The length of the new x and y arrays must match the number of rows in the CSV file.")
+df['x [nm]'] += x_ests
+df['y [nm]'] += y_ests
+df.to_csv(results_path, index=False)
+
+#print(len(x_ests))
+#print(len(y_ests))
+#print(len(theta_ests))
+#print(len(phi_ests))
+#print(len(covariance_ests))
+
+#if not os.path.exists(results_dir):
+#    os.makedirs(results_dir)
+
+
+ # Ensure the results file exists before reading
+#if not os.path.exists(results_path):
+#    print(f"Creating a dummy results file at: {results_path}")
+#    dummy_df = pd.DataFrame({"x [nm]": [], "y [nm]": []})  # Replace with actual structure
+#    dummy_df.to_csv(results_path, index=False)
+
+# Attempt to read the file
+#try:
+#    print(f"Reading results file: {results_path}")
+#    df = pd.read_csv(results_path)
+#except FileNotFoundError as e:
+#    print(f"Error: {e}")
+#    raise
+
+# generate a thunderstorm-style results table with new x,y localisations
+#mortensen_results_path = '/home/wgq72938/Documents/Hinterer/dipole-issue/mortensen-loop/simulation_results/mortensen_results.csv'
+#output_img_path = '/home/wgq72938/Documents/Hinterer/dipole-issue/mortensen-loop/reconstruction.png'
+
+df = pd.read_csv(results_path)
+if len(x_ests) != len(df) or len(y_ests) != len(df):
+    raise ValueError("The length of the new x and y arrays must match the number of rows in the CSV file.")
+df['x [nm]'] += x_ests
+df['y [nm]'] += y_ests
+df.to_csv(results_path, index=False)
+
+# --------------------
+# generating image from results table
+# [not working - go and do it in fiji manually for now]
+# --------------------
+# # this doesn't work due to some conflict or something
+# reconstruct(mortensen_results_path, output_img_path)
+# # try getting round it by running the macro via terminal
+# # !!! this has input/output paths hard-coded !!!
+# command = "/home/tfq96423/fiji-linux64/Fiji.app/ImageJ-linux64 -macro /home/tfq96423/Documents/cryoCLEM/dipole-issue/mortensen-loop/reconstruct.ijm"
+# subprocess.run(command, shell=True, check=True)
+#
+# # show in napari
+# command2 = f"napari {output_img_path}"
+# subprocess.run(command2, shell=True, check=True)
+
+
 
 '''
 def extract_patches(tiff_stack, centroids_image_coords, patch_width):
@@ -262,340 +707,51 @@ def extract_patches(tiff_stack, centroids_image_coords, patch_width):
         print(f"Extracted {len(patches)} patches from frame {frame_idx}")
                 
     return patches
-    '''
 
-def extract_patches(tiff_stack, centroids_image_coords, patch_width):
+
+  
+def visualize_centroids_and_patches(tiff_stack, centroids_image_coords, patch_width, output_dir):
     """
-    Extract patches around centroids from the frames in a TIFF stack.
+    Visualize centroids and patches by overlaying circles and squares on the TIFF frames.
     Args:
         tiff_stack (ndarray): 3D array where each slice is a frame.
         centroids_image_coords (list of tuple): List of (frame, x, y) coordinates.
-        patch_width (int): The width of the square patch to extract.
-    Returns:
-        list: Extracted patches.
+        patch_width (int): Width of the square patch.
+        output_dir (str): Directory to save visualized images.
     """
-    all_patches = []
+    os.makedirs(output_dir, exist_ok=True)  # Create output directory if it doesn't exist
 
     for frame_idx, frame in enumerate(tiff_stack, start=1):
-        patches = []
+        fig, ax = plt.subplots()
+        ax.imshow(frame, cmap="gray")
 
+        # Add centroids as circles
         for centroid in centroids_image_coords:
-            frame_number, x, y = centroid
+            f, x, y = centroid
 
-        for centroid in centroids_image_coords:
-            if not (len(centroid) == 3 and isinstance(centroid[0], int)):
-                raise ValueError(f"Invalid centroid format: {centroid}")
-
-            # Skip centroids that don't belong to the current frame
-            if frame_number != frame_idx:
+            # Skip if the centroid doesn't belong to the current frame
+            if f != frame_idx:
                 continue
 
-            # Define patch bounds
-            x_start = x - patch_width // 2
-            x_end = x + patch_width // 2
-            y_start = y - patch_width // 2
-            y_end = y + patch_width // 2
+            # Draw a circle for the centroid
+            circle = Circle((x, y), radius=5, color="red", fill=False, linewidth=1.5)
+            ax.add_patch(circle)
 
-            # Calculate padding needed
-            pad_left = max(0, -x_start)
-            pad_right = max(0, x_end - frame.shape[1])
-            pad_top = max(0, -y_start)
-            pad_bottom = max(0, y_end - frame.shape[0])
+            # Draw a square for the patch
+            half_width = patch_width // 2
+            rect = Rectangle((x - half_width, y - half_width), patch_width, patch_width, 
+                             edgecolor="blue", facecolor="none", linewidth=1.5)
+            ax.add_patch(rect)
 
-            # Apply padding to the frame
-            padded_frame = np.pad(
-                frame,
-                ((pad_top, pad_bottom), (pad_left, pad_right)),
-                mode='constant',
-                constant_values=0,
-            )
+        # Finalize and save the visualization
+        ax.set_title(f"Frame {frame_idx}")
+        ax.axis("off")
+        plt.savefig(f"{output_dir}/frame_{frame_idx:03d}.png", bbox_inches="tight")
+        plt.close(fig)
 
-            # Recalculate patch coordinates in the padded frame
-            x_start_padded = max(0, x_start) + pad_left
-            x_end_padded = min(frame.shape[1], x_end) + pad_left
-            y_start_padded = max(0, y_start) + pad_top
-            y_end_padded = min(frame.shape[0], y_end) + pad_top
+    print(f"Visualized frames saved to {output_dir}")
 
-            # Extract the patch
-            patch = padded_frame[y_start_padded:y_end_padded, x_start_padded:x_end_padded]
-            patches.append(patch)
-
-        all_patches.extend(patches)
-        print(f"Extracted {len(patches)} patches from frame {frame_idx}")
-
-    return all_patches
-
-# Ensure centroids_image_coords is in the correct format
-print(f"Centroids Image Coordinates: {centroids_image_coords[:10]}")  # Print the first 10 for debugging
-
-# Check if centroids_image_coords is a list of tuples with four elements (frame, x, y)
-for entry in centroids_image_coords:
-    if not (isinstance(entry, tuple) and len(entry) == 3):
-        raise ValueError(f"Invalid centroid format: {entry}")
-print("All centroids are valid")
-
-# Load the TIFF file
-try:
-    tiff_file = app_instance.wait_for_tiff_file()
-    tiff_stack = imread(tiff_file)
-    print(f"Loaded TIFF file: {tiff_file} with {tiff_stack.shape[0]} frames.")
-
-    # Ensure centroids are within valid frame range
-    #num_frames = tiff_stack.shape[0]
-    #centroids_image_coords = [
-    #    (frame, x, y) for frame, x, y in centroids_image_coords if 1 <= frame <= num_frames
-    #]
-    #print(f"Validated Centroids: {centroids_image_coords[:10]}")
-
-    # Ensure centroids are within frame bounds
-
-    print(f"Centroids before filtering: {centroids_image_coords[:10]}")  # Debug output
-
-    num_frames = tiff_stack.shape[0]
-    centroids_image_coords = [
-        (frame, x, y) for frame, x, y in centroids_image_coords if 1 <= frame <= num_frames
-    ]
-    print(f"Filtered centroids (valid frames): {centroids_image_coords[:10]}")  # Debug output
-
-    # Extract patches
-    patch_width = 12
-    current_frame = tiff_stack[0]
-    all_patches = extract_patches(tiff_stack, centroids_image_coords, patch_width)
-    print(f"Total patches extracted: {len(all_patches)}")
-
-    # Extract patches for the first frame as a test
-    #patch_width = 12
-    #current_frame = tiff_stack[0]  # First frame
-    #all_patches = extract_patches(tiff_stack, centroids_image_coords, patch_width)
-
-    #print(f"Total patches extracted {len(all_patches)}")
-
-except FileNotFoundError as e:
-    print(f"Error: {e}")
-except ValueError as e:
-    print(f"Invalid centroids: {e}")
-except Exception as e:
-    print(f"An unexpected error occurred: {e}")
-
-
-########## FIT ############
-def mortensen_single_frame(image,
-                           current_frame_number,
-                           centroids_image_coords,
-                           patch_width,
-                           peak_emission_wavelength,
-                           pixel_width,
-                           magnification,
-                           numerical_aperture,
-                           ref_ind_immersion,
-                           ref_ind_imaging,
-                           ref_ind_buffer,
-                           initvals,
-                           initpix,
-                           deltapix,
-                           Sfloor,
-                           inverse_gain,
-                           sigma_noise):
-    """
-    Perform Mortensen estimation on a single frame given the extracted centroids.
-    """
-    # Subtract the background roughly
-    image = np.clip(image - np.mean(image), 0, 255).astype(np.uint8)
-
-    # Extract 12x12 patches around each centroid in the current frame
-    blob_patches = extract_patches(image, centroids_image_coords, patch_width)
-
-    # Create instance of MLEwT (for each frame)
-    track = diPOLE_python3.MLEwT(peak_emission_wavelength,
-                                 pixel_width,
-                                 magnification,
-                                 numerical_aperture,
-                                 ref_ind_immersion,
-                                 ref_ind_imaging,
-                                 ref_ind_buffer,
-                                 initvals,
-                                 initpix,
-                                 deltapix,
-                                 Sfloor,
-                                 inverse_gain,
-                                 sigma_noise)
-
-    # Loop over all blobs
-    x_list, y_list, phi_list, theta_list, covariance_list = [], [], [], [], []
-
-    for i, blob in enumerate(blob_patches, 1):
-        start_blob = time.time()
-        print(f"Analysing blob {i}/{len(blob_patches)}")
-
-        # Perform estimation
-        x_est, y_est, theta_est, phi_est, cov_mat = track.Estimate(blob)
-        x_list.append(x_est)
-        y_list.append(y_est)
-        theta_list.append(theta_est)
-        phi_list.append(phi_est)
-        covariance_list.append(cov_mat)
-
-        end_blob = time.time()
-        elapsed_time_blob = end_blob - start_blob
-        print(f"Time: {elapsed_time_blob:.4f} seconds on this blob")
-
-    return x_list, y_list, theta_list, phi_list, covariance_list
-
-# --------------------
-# Mortensen run params
-# --------------------
-# Experimental parameters
-peak_emission_wavelength = 500.0 # Peak emission wavelength
-ref_ind_immersion = 1.52 # RI of immersion oil/optics
-ref_ind_imaging = 1.0 # Refractive index of imaging medium (typically that of air, i.e. np = 1.0)
-ref_ind_buffer = 1.31 # RI of buffer
-numerical_aperture = 2.17 # Numerical aperture of objective
-magnification = 215.0 # Magnification of composite microscope
-pixel_width = 51.0 # Pixel width (nm per px)
-
-# PSF parameters
-photon_number = 10000.0 # Photon number?
-background_level = 1.0 # Background level?
-mu = 0.1 # Probe location?
-nu = 0.1 # ...
-phi = 2 * np.pi / 3.0 # inclination
-theta = 0.5 # azimuthal angle
-deltaz = -30.0 # Distance from design focal plane
-
-# EMCCD parameters
-inverse_gain = 1./100.
-sigma_noise = 2 #12.6
-Sfloor = 300.0
-gain = 1.0 / inverse_gain
-
-patch_width = 12 # size of NxN pixel patch around blob centroid to consider
-# --------------------
-
-# Initial thunderstorm run to get blob location
-
-# Load data
-tiff_file = app_instance.wait_for_tiff_file()
-tiff_stack = imread(tiff_file)
-print(tiff_stack)
-frame_paths = [tiff_stack[i] for i in range(tiff_stack.shape[0])]
-num_frames = tiff_stack.shape[0]
-
-# Directory where results will be stored
-results_dir = '/home/wgq72938/Documents/Hinterer/dipole-issue/mortensen-loop/simulation_results'
-
-# Generate results filename with a timestamp
-current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")  # Format: YYYYMMDD_HHMMSS
-results_filename = f"Fit_results_{current_time}.csv"
-
-# Combine the directory and filename to create the full results path
-results_path = os.path.join(results_dir, results_filename)
-
-# Ensure the results directory exists, if not, create it
-if not os.path.exists(results_dir):
-    os.makedirs(results_dir)
-
-print(f"Results will be saved to: {results_path}")
-
-# find centroids using gaussian fitting thunderstorm
-centroids_image_coords = blob_detect_all_frames(centroids, pixel_width)
-
-# Initial guess params
-initvals = array([mu, nu, background_level, photon_number, phi, theta, deltaz]) # initial PSF values
-deltapix = patch_width / 2 # centre of patch around blob
-initpix = (deltapix, deltapix) # centre of patch around blob
-
-# Mortensen run on each blob in each frame
-x_ests, y_ests, theta_ests, phi_ests, covariance_ests = [], [], [], [], []
-for i in range(tiff_stack.shape[0]):
-    start_frame = time.time() # record the start time for this frame
-
-    image = tiff_stack[i]
-
-    if len(image.shape) == 3:
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    print(f"Processing frame {i + 1}/{tiff_stack.shape[0]}, image shape: {image.shape}")
-
-    single_frame_results = list(mortensen_single_frame(image=image,
-                               current_frame_number=i+1, 
-                               centroids_image_coords=centroids_image_coords, 
-                               patch_width=patch_width,
-                               peak_emission_wavelength=peak_emission_wavelength,
-                               pixel_width=pixel_width,
-                               magnification=magnification,
-                               numerical_aperture=numerical_aperture,
-                               ref_ind_immersion=ref_ind_immersion,
-                               ref_ind_imaging=ref_ind_imaging,
-                               ref_ind_buffer=ref_ind_buffer,
-                               initvals=initvals,
-                               initpix=initpix,
-                               deltapix=deltapix,
-                               Sfloor=Sfloor,
-                               inverse_gain=inverse_gain,
-                               sigma_noise=sigma_noise,))
-
-    x_ests.append(single_frame_results[0])
-    y_ests.append(single_frame_results[1])
-    theta_ests.append(single_frame_results[2])
-    phi_ests.append(single_frame_results[3])
-    covariance_ests.append(single_frame_results[4])
-
-    end_frame = time.time()
-    elapsed_time_frame = end_frame - start_frame
-    elapsed_time_frame = elapsed_time_frame/60
-    print(f"Time: {elapsed_time_frame:.4f} minutes on this frame")
-
-# make sure list is flat, because it needs to be for results table
-x_ests = [item for sublist in x_ests for item in sublist]
-y_ests = [item for sublist in y_ests for item in sublist]
-theta_ests = [item for sublist in theta_ests for item in sublist]
-phi_ests = [item for sublist in phi_ests for item in sublist]
-covariance_ests = [item for sublist in covariance_ests for item in sublist]
-
-print(len(x_ests))
-print(len(y_ests))
-print(len(theta_ests))
-print(len(phi_ests))
-print(len(covariance_ests))
-
-if not os.path.exists(results_dir):
-    os.makedirs(results_dir)
-
-# Ensure the results file exists before reading
-if not os.path.exists(results_path):
-    print(f"Creating a dummy results file at: {results_path}")
-    dummy_df = pd.DataFrame({"x [nm]": [], "y [nm]": []})  # Replace with actual structure
-    dummy_df.to_csv(results_path, index=False)
-
-# Attempt to read the file
-try:
-    print(f"Reading results file: {results_path}")
-    df = pd.read_csv(results_path)
-except FileNotFoundError as e:
-    print(f"Error: {e}")
-    raise
-
-# generate a thunderstorm-style results table with new x,y localisations
-#mortensen_results_path = '/home/wgq72938/Documents/Hinterer/dipole-issue/mortensen-loop/simulation_results/mortensen_results.csv'
-#output_img_path = '/home/wgq72938/Documents/Hinterer/dipole-issue/mortensen-loop/reconstruction.png'
-
-df = pd.read_csv(results_path)
-if len(x_ests) != len(df) or len(y_ests) != len(df):
-    raise ValueError("The length of the new x and y arrays must match the number of rows in the CSV file.")
-df['x [nm]'] += x_ests
-df['y [nm]'] += y_ests
-df.to_csv(results_path, index=False)
-
-# --------------------
-# generating image from results table
-# [not working - go and do it in fiji manually for now]
-# --------------------
-# # this doesn't work due to some conflict or something
-# reconstruct(mortensen_results_path, output_img_path)
-# # try getting round it by running the macro via terminal
-# # !!! this has input/output paths hard-coded !!!
-# command = "/home/tfq96423/fiji-linux64/Fiji.app/ImageJ-linux64 -macro /home/tfq96423/Documents/cryoCLEM/dipole-issue/mortensen-loop/reconstruct.ijm"
-# subprocess.run(command, shell=True, check=True)
-#
-# # show in napari
-# command2 = f"napari {output_img_path}"
-# subprocess.run(command2, shell=True, check=True)
+# Example usage
+output_dir = "/home/wgq72938/Documents/Hinterer/fixed-dipole-issue/mortensen/simulation_results"
+visualize_centroids_and_patches(tiff_stack, centroids_image_coords, patch_width, output_dir)
+'''
