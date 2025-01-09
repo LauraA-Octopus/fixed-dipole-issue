@@ -122,25 +122,8 @@ def compare_centroids(image_path, ground_truth, detected, output_path):
     # Save the comparison image
     cv2.imwrite(output_path, image)
     print(f"Comparison image saved to {output_path}")
-    
-def calculate_distances(ground_truth, detected): 
-    """ 
-    Calculate the distance between ground truth and detected centroids. 
-    Parameters: ground_truth (list): Ground truth centroids as a list of (x, y) tuples. 
-    detected (list): Detected centroids as a list of (x, y) tuples. 
-    Returns: distances (list): List of distances between each ground truth and detected centroid. 
-    """ 
-    distances = [] 
-    for gt in ground_truth: 
-        min_distance = float('inf') 
-        for dt in detected: 
-            distance = np.sqrt((gt[0] - dt[0]) ** 2 + (gt[1] - dt[1]) ** 2) 
-            if distance < min_distance: 
-                min_distance = distance 
-        distances.append(min_distance) 
-    return distances
 
-def draw_patches_with_coordinates(image_path, centroids, output_path, patch_width=12): 
+def draw_patches(image_path, centroids, output_path, patch_width=12): 
     """ 
     Draw patches around the given centroids on the image and print their coordinates. 
     Parameters: image_path (str): Path to the image file. centroids (list): List of (x, y) tuples representing the centroids. 
@@ -152,8 +135,10 @@ def draw_patches_with_coordinates(image_path, centroids, output_path, patch_widt
     image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE) 
     if image is None: 
         raise FileNotFoundError(f"Image not found at {image_path}") 
+    
     # Convert to color image for better visualization 
     image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR) 
+
     patch_coordinates = [] 
     for cx, cy in centroids: 
         # Define the patch coordinates 
@@ -161,26 +146,115 @@ def draw_patches_with_coordinates(image_path, centroids, output_path, patch_widt
         x_end = min(image.shape[1], cx + patch_width // 2) 
         y_start = max(0, cy - patch_width // 2) 
         y_end = min(image.shape[0], cy + patch_width // 2) 
+
         # Store the patch coordinates 
         patch_coordinates.append((x_start, y_start, x_end, y_end)) 
+
         # Draw a rectangle around the patch 
         cv2.rectangle(image, (x_start, y_start), (x_end, y_end), color=(255, 255, 0), thickness=1) 
+
     # Save the image with patches 
     cv2.imwrite(output_path, image) 
     print(f"Image with patches saved to {output_path}") 
-    print(f"Patch coordinates: {patch_coordinates}") 
+    #print(f"Patch coordinates: {patch_coordinates}") 
     return patch_coordinates
     
 
 ########## FIT ############
-def mortensen_single_frame(image,
-                           detected_centroids,
+#def mortensen_single_frame(image,
+#                           current_frame_number,
+                        #    centroids_image_coords,
+                        #    patch_width,
+                        #    peak_emission_wavelength,
+                        #    pixel_width,
+                        #    magnification,
+                        #    numerical_aperture,
+                        #    ref_ind_immersion,
+                        #    ref_ind_imaging,
+                        #    ref_ind_buffer,
+                        #    initvals,
+                        #    initpix,
+                        #    deltapix,
+                        #    Sfloor,
+                        #    inverse_gain,
+                        #    sigma_noise):
+    # """
+    # Perform Mortensen estimation on a single frame given the extracted centroids.
+    # """
+    # # Subtract the background roughly
+    # image = np.clip(image - np.mean(image), 0, 255).astype(np.uint8)
+
+    # # Validate centroids (skip those that are too close to the edges for a full patch)
+    # valid_centroids = []
+    # for cx, cy in centroids_image_coords:
+    #     # Ensure centroid is within bounds such that the patch doesn't go out of the image.
+    #     if patch_width // 2 <= cx < image.shape[1] - patch_width // 2 and \
+    #        patch_width // 2 <= cy < image.shape[0] - patch_width // 2:
+    #         valid_centroids.append((cx, cy))  # Store as (x, y)
+
+    # if len(valid_centroids) == 0:
+    #     return [], [], [], [], []
+
+    # # Extract patches around each valid centroid
+    # blob_patches = []
+    # for cx, cy in valid_centroids:
+    #     # Define the patch coordinates
+    #     x_start = cx - patch_width // 2
+    #     x_end = cx + patch_width // 2
+    #     y_start = cy - patch_width // 2
+    #     y_end = cy + patch_width // 2
+
+    #     # Extract the patch and append it to blob_patches
+    #     patch = image[y_start:y_end, x_start:x_end]
+    #     if patch.shape == (patch_width, patch_width):
+    #         blob_patches.append(patch)
+    #     else:
+    #         print(f"Skipped patch extraction at ({cx}, {cy}) due to invalid shape {patch.shape}")
+
+    # if len(blob_patches) == 0:
+    #     return [], [], [], [], []
+
+    # # Create an instance of MLEwT
+    # track = diPOLE_python3.MLEwT(
+    #     peak_emission_wavelength,
+    #     pixel_width,
+    #     magnification,
+    #     numerical_aperture,
+    #     ref_ind_immersion,
+    #     ref_ind_imaging,
+    #     ref_ind_buffer,
+    #     initvals,
+    #     initpix,
+    #     deltapix,
+    #     Sfloor,
+    #     inverse_gain,
+    #     sigma_noise
+    # )
+
+    # # Process each patch
+    # x_list, y_list, theta_list, phi_list, covariance_list = [], [], [], [], []
+    # for i, blob in enumerate(blob_patches, 1):
+    #     try:
+    #         x_est, y_est, theta_est, phi_est, cov_mat = track.Estimate(blob)
+    #         x_list.append(x_est)
+    #         y_list.append(y_est)
+    #         theta_list.append(theta_est)
+    #         phi_list.append(phi_est)
+    #         covariance_list.append(cov_mat)
+    #         print(f"Blob {i}: x={x_est}, y={y_est}, theta={theta_est}, phi={phi_est}")
+    #     except Exception as e:
+    #         print(f"Error processing blob {i}: {e}")
+
+    # return x_list, y_list, theta_list, phi_list, covariance_list
+
+def mortensen_single_frame(image, 
+                           current_frame_number,
+                           dipole_centroids,
                            patch_width,
                            peak_emission_wavelength,
                            pixel_width,
                            magnification,
                            numerical_aperture,
-                           ref_ind_immersion,
                            ref_ind_imaging,
                            ref_ind_buffer,
                            initvals,
@@ -190,73 +264,67 @@ def mortensen_single_frame(image,
                            inverse_gain,
                            sigma_noise):
     """
-    Perform Mortensen estimation on a single frame given the extracted centroids.
+    Perform Mortensen estimation on a single frame given the extracted centroids
     """
     # Subtract the background roughly
     image = np.clip(image - np.mean(image), 0, 255).astype(np.uint8)
 
     # Validate centroids (skip those that are too close to the edges for a full patch)
     valid_centroids = []
-    for cx, cy in centroids_image_coords:
-        # Ensure centroid is within bounds such that the patch doesn't go out of the image.
+    for frame, cx, cy in dipole_centroids:
+        # Ensure centroid is within the bounds such that the patch doesn't go out of the image
         if patch_width // 2 <= cx < image.shape[1] - patch_width // 2 and \
            patch_width // 2 <= cy < image.shape[0] - patch_width // 2:
-            valid_centroids.append((cx, cy))  # Store as (x, y)
-
+            valid_centroids.append((frame, cx, cy))
+    
     if len(valid_centroids) == 0:
+        print(f"No valid centroids in frame {current_frame_number}")
         return [], [], [], [], []
-
+    
     # Extract patches around each valid centroid
-    blob_patches = []
-    for cx, cy in valid_centroids:
-        # Define the patch coordinates
-        x_start = cx - patch_width // 2
-        x_end = cx + patch_width // 2
-        y_start = cy - patch_width // 2
-        y_end = cy + patch_width // 2
+    blob_patches = [
+        image[cy - patch_width // 2 : cy + patch_width // 2,
+              cx - patch_width // 2 : cx + patch_width //2]
+        for _, cx, cy in valid_centroids
+    ]
 
-        # Extract the patch and append it to blob_patches
-        patch = image[y_start:y_end, x_start:x_end]
-        if patch.shape == (patch_width, patch_width):
-            blob_patches.append(patch)
-        else:
-            print(f"Skipped patch extraction at ({cx}, {cy}) due to invalid shape {patch.shape}")
+    # Check patch dimensions
+    for i, patch in enumerate(blob_patches, 1):
+        if patch.shape != (patch_width, patch_width):
+            print(f"Skipping patch {i}: invalid shape {patch.shape}")
+            continue
 
-    if len(blob_patches) == 0:
-        return [], [], [], [], []
-
-    # Create an instance of MLEwT
-    track = diPOLE_python3.MLEwT(
-        peak_emission_wavelength,
-        pixel_width,
-        magnification,
-        numerical_aperture,
-        ref_ind_immersion,
-        ref_ind_imaging,
-        ref_ind_buffer,
-        initvals,
-        initpix,
-        deltapix,
-        Sfloor,
-        inverse_gain,
-        sigma_noise
-    )
-
+    # Create instance of MLEwT
+    track = diPOLE_python3.MLEwT(peak_emission_wavelength,
+                                 pixel_width,
+                                 magnification,
+                                 numerical_aperture,
+                                 ref_ind_immersion,
+                                 ref_ind_imaging,
+                                 ref_ind_buffer,
+                                 initvals,
+                                 initpix,
+                                 deltapix,
+                                 Sfloor,
+                                 inverse_gain,
+                                 sigma_noise)
+    
     # Process each patch
     x_list, y_list, theta_list, phi_list, covariance_list = [], [], [], [], []
     for i, blob in enumerate(blob_patches, 1):
         try:
-            x_est, y_est, theta_est, phi_est, cov_mat = track.Estimate(blob)
-            x_list.append(x_est)
-            y_list.append(y_est)
-            theta_list.append(theta_est)
-            phi_list.append(phi_est)
+            x_ests, y_ests, theta_ests, phi_ests, cov_mat = track.Estimate(blob)
+            x_list.append(x_ests)
+            y_list.append(y_ests)
+            theta_list.append(theta_ests)
+            phi_list.append(phi_ests)
             covariance_list.append(cov_mat)
-            print(f"Blob {i}: x={x_est}, y={y_est}, theta={theta_est}, phi={phi_est}")
+            print(f"Blob {i}: x={x_ests}, y={y_ests}, theta={theta_ests}, phi={phi_ests}")
         except Exception as e:
             print(f"Error processing blob {i}: {e}")
 
     return x_list, y_list, theta_list, phi_list, covariance_list
+    
 # --------------------
 # Mortensen run params
 # --------------------
@@ -290,13 +358,13 @@ patch_width = 12 # size of NxN pixel patch around blob centroid to consider
 # Initial thunderstorm run to get blob location
 
 # Load data 
-tiff_stack = imread(image_path) #questo deve essere l'imm dei dipoli
+tiff_stack = cv2.imread("/home/wgq72938/Documents/Hinterer/fixed-dipole-issue/mortensen/image_stack_fixdip_maxproject.png") #questo deve essere l'imm dei dipoli
 
 # Directory where results will be stored
-results_dir =  r"C:\Users\laura\fixed-dipole-issue\mortensen\simulation_results"
+results_dir =  "/home/wgq72938/Documents/Hinterer/fixed-dipole-issue/mortensen/simulation_results"
 
 # Generate results filename with a timestamp
-current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")  # Format: YYYYMMDD_HHMMSS
+current_time = datetime.now().strftime("%Y%m%d_%H%M%S")  # Format: YYYYMMDD_HHMMSS
 results_filename = f"Fit_results_{current_time}.csv"
 
 # Combine the directory and filename to create the full results path
@@ -310,13 +378,13 @@ if not os.path.exists(results_dir):
 print(f"Results will be saved to: {results_path}")
 
 # find centroids using gaussian fitting thunderstorm
-centroids_image_coords = detected_centroids
+#centroids_image_coords = ground_truth_with_drawing(image_path, output_path)
 
 # Initial guess params
 initvals = array([mu, nu, background_level, photon_number, phi, theta, deltaz]) # initial PSF values
 deltapix = patch_width / 2 # centre of patch around blob
 initpix = (deltapix, deltapix) # centre of patch around blob
-
+"""
 # Mortensen run on each blob in each frame
 x_ests, y_ests, theta_ests, phi_ests, covariance_ests = [], [], [], [], []
 for i in range(tiff_stack.shape[0]):
@@ -329,14 +397,14 @@ for i in range(tiff_stack.shape[0]):
     #print(f"Processing frame {i + 1}/{tiff_stack.shape[0]}, image shape: {image.shape}")
 
     single_frame_results = list(mortensen_single_frame(image=image,
-                               current_frame_number=i+1, 
-                               centroids_image_coords=centroids_image_coords, 
+                               current_frame_number=i+1,
+                               dipole_centroids=dipole_centroids,  
                                patch_width=patch_width,
                                peak_emission_wavelength=peak_emission_wavelength,
                                pixel_width=pixel_width,
                                magnification=magnification,
                                numerical_aperture=numerical_aperture,
-                               ref_ind_immersion=ref_ind_immersion,
+                               #ref_ind_immersion=ref_ind_immersion,
                                ref_ind_imaging=ref_ind_imaging,
                                ref_ind_buffer=ref_ind_buffer,
                                initvals=initvals,
@@ -344,7 +412,7 @@ for i in range(tiff_stack.shape[0]):
                                deltapix=deltapix,
                                Sfloor=Sfloor,
                                inverse_gain=inverse_gain,
-                               sigma_noise=sigma_noise,))
+                               sigma_noise=sigma_noise))
 
     x_ests.append(single_frame_results[0])
     y_ests.append(single_frame_results[1])
@@ -397,33 +465,36 @@ if len(x_ests) != len(df) or len(y_ests) != len(df):
 df['x [nm]'] += x_ests
 df['y [nm]'] += y_ests
 df.to_csv(results_path, index=False)
-
+"""
 
 if __name__ == "__main__":
 
     # Example usage for ground truth
-    image_path = r"C:\Users\laura\fixed-dipole-issue\mortensen\image_stack_fixdip_maxproject.png"
-    output_path_ground_truth = r"C:\Users\laura\fixed-dipole-issue\mortensen\image_with_dipoles.png"
+    image_path = "/home/wgq72938/Documents/Hinterer/fixed-dipole-issue/mortensen/image_stack_fixdip_maxproject.png"
+    output_path_ground_truth = "/home/wgq72938/Documents/Hinterer/fixed-dipole-issue/mortensen/image_with_dipoles.png"
     dipole_centroids = ground_truth_with_drawing(image_path, output_path_ground_truth)
     print(f"Ground truth centroids: {dipole_centroids}")
 
     # Example usage for finding centroids
-    default_output_path_detected = r"C:\Users\laura\fixed-dipole-issue\mortensen\image_with_detected_centroids.png"
+    default_output_path_detected = "/home/wgq72938/Documents/Hinterer/fixed-dipole-issue/mortensen/image_with_detected_centroids.png"
     detected_centroids = find_centroids(image_path, default_output_path_detected)
     print(f"Detected centroids: {detected_centroids}")
 
     # Compare ground truth and detected centroids
-    comparison_output_path = r"C:\Users\laura\fixed-dipole-issue\mortensen\comparison_image.png"
+    comparison_output_path = "/home/wgq72938/Documents/Hinterer/fixed-dipole-issue/mortensen/comparison_image.png"
     compare_centroids(image_path, dipole_centroids, detected_centroids, comparison_output_path)
 
     # Calculate distances between ground truth and detected centroids 
-    distances = calculate_distances(dipole_centroids, detected_centroids)
-    print(f"Distances between ground truth and detected centroids: {distances}") 
+    #distances = compare_centroids(dipole_centroids, detected_centroids)
+    #print(f"Distances between ground truth and detected centroids: {distances}") 
     
     # Draw patches around detected centroids and store patch coordinates 
-    patches_output_path = r"C:\Users\laura\fixed-dipole-issue\mortensen\image_with_patches.png" 
-    patch_coords = draw_patches_with_coordinates(image_path, detected_centroids, patches_output_path)
+    patches_output_path = "/home/wgq72938/Documents/Hinterer/fixed-dipole-issue/mortensen/image_with_patches.png" 
+    patch_coords = draw_patches(image_path, detected_centroids, patches_output_path)
+
+    results = mortensen_single_frame(image, current_frame_number,dipole_centroids, patch_width, peak_emission_wavelength, pixel_width, magnification, numerical_aperture, ref_ind_imaging, ref_ind_buffer, initvals, initpix, deltapix, Sfloor, inverse_gain, sigma_noise)
+    print(results)
 
     # Draw patches around detected centroids
-#    patches_output_path = r"C:\Users\laura\fixed-dipole-issue\mortensen\image_with_patches.png"
+#    patches_output_path = "/home/wgq72938/Documents/Hinterer/fixed-dipole-issue/mortensen/image_with_patches.png"
 #    draw_patches(image_path, detected_centroids, patches_output_path)
