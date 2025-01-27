@@ -1,6 +1,7 @@
 import cv2
 import os
 import time
+import sys
 import numpy as np
 from pylab import *
 import pandas as pd
@@ -9,9 +10,13 @@ import glob
 import importlib.util
 import matplotlib.pyplot as plt
 from argparse import Namespace
-import diPOLE_python3
+#import diPOLE_python3
 from datetime import datetime
+from scipy.optimize import fmin_powell
+import traceback
 
+sys.path.append("/home/wgq72938/Documents/octo-cryoclem-smlm/third_party/MCSF2010/fixed_dipole")
+from MLEwT_fixed import MLEwT
 
 simu_path = "/home/wgq72938/Documents/octo-cryoclem-smlm/smlm/demos/demo_simulate_image_stack.py"
 spec = importlib.util.spec_from_file_location("demo_simulate_image_stack", simu_path)
@@ -170,116 +175,108 @@ class CustomApplication(AppClass):
         return patch_coordinates
         
 
-    ########## FIT ############
+########## FIT ############
     def mortensen_single_frame(self, image,
-                                current_frame_number,
-                                centroids_image_coords,
-                                patch_width,
-                                peak_emission_wavelength,
-                                pixel_width,
-                                magnification,
-                                numerical_aperture,
-                                ref_ind_immersion,
-                                ref_ind_imaging,
-                                ref_ind_buffer,
-                                initvals,
-                                initpix,
-                                deltapix,
-                                Sfloor,
-                                inverse_gain,
-                                sigma_noise):
+                           current_frame_number,
+                           centroids_image_coords,
+                           patch_width,
+                           peak_emission_wavelength,
+                           pixel_width,
+                           magnification,
+                           numerical_aperture,
+                           ref_ind_immersion,
+                           ref_ind_buffer,
+                           inverse_gain,
+                           Sfloor,
+                           sigma_noise,
+                           initvals,
+                           initpix,
+                           deltapix,
+                           norm_file
+                           ):
         """
         Perform Mortensen estimation on a single frame given the extracted centroids.
         """
+        
+        # Ensure initvals is a list
+        initvals = list(initvals) if isinstance(initvals, np.ndarray) else initvals
+        if not isinstance(initvals, list):
+            initvals = [initvals]
+
         # Subtract the background roughly
         image = np.clip(image - np.mean(image), 0, 255).astype(np.uint8)
 
         # Validate centroids (skip those that are too close to the edges for a full patch)
         valid_centroids = []
+        valid_Xcentroids_nm = []
+        valid_Ycentroids_nm = []
         for cx, cy in centroids_image_coords:
             # Ensure centroid is within bounds such that the patch doesn't go out of the image.
             if patch_width // 2 <= cx < image.shape[1] - patch_width // 2 and \
-               patch_width // 2 <= cy < image.shape[0] - patch_width // 2:
-               valid_centroids.append((cx, cy))  # Store as (x, y)
+            patch_width // 2 <= cy < image.shape[0] - patch_width // 2:
+                valid_centroids.append((int(cx), int(cy)))  # Ensure centroids are integers
+                valid_Xcentroids_nm.append((int(cx*51)))
+                valid_Ycentroids_nm.append((int(cy*51)))
 
         if len(valid_centroids) == 0:
+            print("No valid centroids after filtering.")
             return [], [], [], [], []
 
-        # Extract patches around each valid centroid
-        blob_patches = []
-        for cx, cy in valid_centroids:
-            # Define the patch coordinates
-            x_start = cx - patch_width // 2
-            x_end = cx + patch_width // 2
-            y_start = cy - patch_width // 2
-            y_end = cy + patch_width // 2
+        # Debug: print valid centroids
+        print(f"Valid centroids: {valid_centroids}")
+        print(f"Ground truth xcentroids: {valid_Xcentroids_nm}")
+        print(f"Ground truth ycentroids: {valid_Xcentroids_nm}")
 
-            # Extract the patch and append it to blob_patches
-            patch = image[y_start:y_end, x_start:x_end]
-            if patch.shape == (patch_width, patch_width):
-                blob_patches.append(patch)
-            else:
-                print(f"Skipped patch extraction at ({cx}, {cy}) due to invalid shape {patch.shape}")
+        # Create an instance of MLEwT Michael
+        track = MLEwT(peak_emission_wavelength,
+                                pixel_width,
+                                magnification,
+                                numerical_aperture,
+                                ref_ind_immersion,
+                                ref_ind_buffer,
+                                inverse_gain,
+                                Sfloor,
+                                sigma_noise,
+                                initvals,
+                                initpix,
+                                deltapix,
+                                norm_file,
+                                )
 
-        if len(blob_patches) == 0:
-            return [], [], [], [], []
-        
-        # Only for debugging: DELETE: 
-        for patch in blob_patches:
-            if not isinstance(patch, np.ndarray):
-                print("Invalid patch: not a NumPy array")
-            elif patch.ndim != 2:
-                print(f"Invalid patch: expected 2D, got {patch.ndim}D")
-            elif patch.shape != (patch_width, patch_width):
-                print(f"Invalid patch shape: {patch.shape}")
-         
-        # Create an instance of MLEwT
-        track = diPOLE_python3.MLEwT(
-            peak_emission_wavelength,
-            pixel_width,
-            magnification,
-            numerical_aperture,
-            ref_ind_immersion,
-            ref_ind_imaging,
-            ref_ind_buffer,
-            initvals,
-            initpix,
-            deltapix,
-            Sfloor,
-            inverse_gain,
-            sigma_noise
-        )
-
-        validated_centroids = []
-        for blob in detected_centroids:
-            if isinstance(blob, (list, tuple)) and len(blob) == 2:
-                validated_centroids.append(blob)
-            else:
-                print(f"Invalid blob: {blob}")
-        
-        # Process each patch
+        # Process each centroid
         x_list, y_list, theta_list, phi_list, covariance_list = [], [], [], [], []
-        
-        
-
-        for i, blob in enumerate(blob_patches, 1):
-            #print(f"Blob {i} shape: {blob.shape} type: {type(blob)}")
-
-            #if not isinstance(blob, np.ndarray):
-            #    print(f"Invalid blob format at index {i}: {blob}")
-            #    continue
+        for i, (cx, cy) in enumerate(valid_centroids, 1):
             try:
-                x_est, y_est, theta_est, phi_est, cov_mat = track.Estimate(blob)
+                # Ensure initpix is a tuple of integers
+                track.initpix = (int(cy), int(cx))
+
+                # Debug: Log inputs to Estimate
+                print(f"Processing centroid {i}: initpix=({cy}, {cx})")
+
+                # Call the Estimate method with the full image
+                
+                result = track.Estimate(image)     
+                print(f"result length is: {len(result)}") 
+
+                # Validate and unpack the result
+                if not isinstance(result, (list, tuple)) or len(result) < 7:
+                    raise ValueError(f"Unexpected Estimate result format: {result}")
+
+                x_est, y_est, theta_est, phi_est, cov_mat = result[0], result[1], result[4], result[5], result[6:]
                 x_list.append(x_est)
                 y_list.append(y_est)
                 theta_list.append(theta_est)
                 phi_list.append(phi_est)
                 covariance_list.append(cov_mat)
-                #print(f"Blob {i}: x={x_est}, y={y_est}, theta={theta_est}, phi={phi_est}")
-            except Exception as e:
-                print(f"Error processing blob {i}: {e}")
 
-        return x_list, y_list, theta_list, phi_list, covariance_list
+                # Debug: Print results for this centroid
+                print(f"Centroid {i}: x={x_est}, y={y_est}, theta={theta_est}, phi={phi_est}")
+
+            except Exception as e:
+                print(f"Error processing centroid {i} at ({cx}, {cy}): {e}")
+                traceback.print_exc()
+
+        return x_list, y_list, theta_list, phi_list, covariance_list, valid_Xcentroids_nm, valid_Ycentroids_nm
     
     def analyse_simulation(self, png_file, **mortensen_params):
         """
@@ -326,21 +323,24 @@ if __name__ == "__main__":
 
     # Mortensen fit
     png_file = app_instance.wait_for_file(file_extension="png")
+    home = os.getenv('HOME')
+    norm_file = os.path.join(home, 'dipolenorm.npy')
+
     mortensen_params ={
         "patch_width": 12,
         "peak_emission_wavelength": 500,
         "pixel_width": 51,
         "magnification": 215,
-        "numerical_aperture": 2.17,
+        "numerical_aperture": 2.15,
         "ref_ind_immersion": 1.515,
-        "ref_ind_imaging": 1.5,
         "ref_ind_buffer": 1.31,
-        "initvals": [0.5, 0.5],
-        "initpix": [138, 66],
-        "deltapix": [6, 6],
+        "inverse_gain": 0.09,
+        "initvals": np.array([0.1, 0.1, 100, 20000, 2, 2.3]),
+        "initpix": [261, 47],
+        "deltapix": 6,
         "Sfloor": 100,
-        "inverse_gain": 1.0,
-        "sigma_noise": 1.0,
+        "sigma_noise": 1,
+        "norm_file": norm_file,
     } 
     x, y, theta, phi, cov = app_instance.analyse_simulation(png_file, **mortensen_params)
-    print(f"x: {x}, y: {y}, theta: {theta}, phi: {phi}, cov: {cov}")
+    #print(f"x: {x}, y: {y}, theta: {theta}, phi: {phi}, cov: {cov}")
