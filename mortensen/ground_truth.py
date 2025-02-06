@@ -1,6 +1,7 @@
 import cv2
 import os
 import time
+import h5py
 import sys
 import numpy as np
 from pylab import *
@@ -9,6 +10,8 @@ from argparse import Namespace
 import glob
 import importlib.util
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')  # Prevents GUI issues
 from argparse import Namespace
 #import diPOLE_python3
 from datetime import datetime
@@ -43,27 +46,23 @@ class CustomApplication(AppClass):
         print(f"simulation3 raw result: {result}, type: {type(result)}, shape: {result.shape}")
         
         # Process result based on its structure
-        if isinstance(result, np.ndarray):
-            if result.ndim == 2:  # Assume 2D array where each row is [x, y]
-                result = [[(x, y) for x, y in result]]  # Wrap in a list (single frame)
-            elif result.ndim == 1 and len(result) == 2:  # Single point case
-                result = [[(result[0], result[1])]]
+        if isinstance(result, pd.DataFrame):
+            if {'x', 'y'}.issubset(result.columns):
+                # Extract only (x, y) pairs
+                self.centroids = list(zip(result['x'], result['y']))
+                self.x_centroids = result['x'].tolist()
+                self.y_centroids = result['y'].tolist()
             else:
-                raise ValueError(f"Unexpected result structure: {result}")
-
-        print(f"Processed simulation3 result: {result}")
-        
-        # Check frame count
-        if len(result) < 1:
-            print("Simulation returned insufficient frames")
-            png_file = self.wait_for_file(file_extension="png")
-            self.centroids = self.extract_centroids(file_path = png_file, 
-                                                    output_dir = "/home/wgq72938/Documents/Hinterer/fixed-dipole-issue/mortensen/simulation_results") 
+                raise ValueError("Expected columns 'x' and 'y' in the simulation output.")
         else:
-            self.centroids = result
+            raise TypeError("Unexpected output type from simulation3. Expected DataFrame.")
+
+        print(f"Processed simulation3 centroids: {self.centroids}")
+        print(f"All X centroids: {self.x_centroids}")
+        print(f"All Y centroids: {self.y_centroids}")
 
         print("Custom behavior after simulation3")
-        return self.centroids
+        return self.centroids, self.x_centroids, self.y_centroids
     
     def wait_for_file(self, file_extension, timeout=60):
         """
@@ -93,59 +92,28 @@ class CustomApplication(AppClass):
             # Check for timeout
             elapsed_time = time.time() - start_time
             if elapsed_time > timeout:
-                raise TimeoutError(f"TIFF file not found within {timeout} seconds.")
+                raise TimeoutError(f"file not found within {timeout} seconds.")
 
             time.sleep(1)  # Wait before checking again
 
-    def find_centroids(self, png_file, output_path, threshold=15, min_area=4):
-        """
-        Automatically detect centroids of bright regions (dipoles) in the image.
+    
+
+    def draw_patches(self, png_file, output_path, patch_width=12):
+        """ 
+        Draw patches around centroids obtained from simulation3() on the image and print their coordinates. 
+
         Parameters:
-            png_file (str): Path to the fixed image containing the dipoles.
-            output_path (str): Path to save the image with drawn centroids.
-            threshold (int): Pixel intensity threshold for binarization.
-            min_area (int): Minimum area of detected regions to consider as dipoles.
+            png_file (str): Path to the image file.
+            output_path (str): Path to save the image with patches drawn.
+            patch_width (int): Width of the square patches.
+
         Returns:
-            centroids (list): List of (x, y) tuples representing the detected centroid locations.
-        """
-        # Load the fixed image
-        image = cv2.imread(png_file, cv2.IMREAD_GRAYSCALE)
-        if image is None:
-            raise FileNotFoundError(f"Image not found at {png_file}")
-
-        # Threshold the image to create a binary mask
-        _, binary_image = cv2.threshold(image, threshold, 255, cv2.THRESH_BINARY)
-
-        # Find contours in the binary image
-        contours, _ = cv2.findContours(binary_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        ground_truth = []
-        for contour in contours:
-            if cv2.contourArea(contour) >= min_area:
-                # Calculate the centroid of the contour
-                M = cv2.moments(contour)
-                if M["m00"] != 0:
-                    cx = int(M["m10"] / M["m00"])
-                    cy = int(M["m01"] / M["m00"])
-                    ground_truth.append((cx, cy))
-
-                    # Draw the centroid on the image
-                    cv2.circle(image, (cx, cy), radius=1, color=(0, 255, 0), thickness=-1)
-
-        # Save the image with detected centroids
-        cv2.imwrite(output_path, image)
-        print(f"Image with detected centroids saved to {output_path}")
-
-        return ground_truth
-
-    def draw_patches(self, png_file, ground_truth, output_path, patch_width=12): 
+            patch_coordinates (list): List of coordinates for each patch.
         """ 
-        Draw patches around the given centroids on the image and print their coordinates. 
-        Parameters: png_file (str): Path to the image file. centroids (list): List of (x, y) tuples representing the centroids. 
-        png_file (str): Path to save the image with patches drawn. 
-        patch_width (int): Width of the square patches. 
-        Returns: patch_coordinates (list): List of coordinates for each patch. 
-        """ 
+        # Ensure centroids are available
+        if not hasattr(self, 'centroids') or not self.centroids:
+            raise ValueError("Centroids not found. Run simulation3() first.")
+
         # Load the image 
         image = cv2.imread(png_file, cv2.IMREAD_GRAYSCALE) 
         if image is None: 
@@ -155,12 +123,12 @@ class CustomApplication(AppClass):
         image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR) 
 
         patch_coordinates = [] 
-        for cx, cy in ground_truth: 
+        for x, y in self.centroids:  # Use self.centroids from simulation3()
             # Define the patch coordinates 
-            x_start = max(0, cx - patch_width // 2) 
-            x_end = min(image.shape[1], cx + patch_width // 2) 
-            y_start = max(0, cy - patch_width // 2) 
-            y_end = min(image.shape[0], cy + patch_width // 2) 
+            x_start = max(0, x - patch_width // 2) 
+            x_end = min(image.shape[1], x + patch_width // 2) 
+            y_start = max(0, y - patch_width // 2) 
+            y_end = min(image.shape[0], y + patch_width // 2) 
 
             # Store the patch coordinates 
             patch_coordinates.append((x_start, y_start, x_end, y_end)) 
@@ -171,8 +139,18 @@ class CustomApplication(AppClass):
         # Save the image with patches 
         cv2.imwrite(output_path, image) 
         print(f"Image with patches saved to {output_path}") 
-        #print(f"Patch coordinates: {patch_coordinates}") 
         return patch_coordinates
+    
+    def get_latest_dataset_directory(self, base_dir):
+        """
+        Returns the path of the latest dataset_* directory.
+        """
+        subdirs = [d for d in glob.glob(f"{base_dir}/dataset_*") if os.path.isdir(d)]
+        if not subdirs:
+            raise FileNotFoundError("No dataset directories found.")
+
+        latest_subdir = max(subdirs, key=os.path.getmtime)
+        return latest_subdir
         
 
 ########## FIT ############
@@ -206,28 +184,34 @@ class CustomApplication(AppClass):
         # Subtract the background roughly
         image = np.clip(image - np.mean(image), 0, 255).astype(np.uint8)
 
+        # Use self.centroids from simulation3()
+        if not hasattr(self, 'centroids') or not self.centroids:
+            raise ValueError("Centroids not found. Run simulation3() first.")
+
         # Validate centroids (skip those that are too close to the edges for a full patch)
         valid_centroids = []
-        valid_Xcentroids_nm = []
-        valid_Ycentroids_nm = []
-        for cx, cy in centroids_image_coords:
+        #valid_Xcentroids_nm = []
+        #valid_Ycentroids_nm = []
+        for x, y in centroids_image_coords:
+            x_pix = x / 51
+            y_pix = y / 51
             # Ensure centroid is within bounds such that the patch doesn't go out of the image.
-            if patch_width // 2 <= cx < image.shape[1] - patch_width // 2 and \
-            patch_width // 2 <= cy < image.shape[0] - patch_width // 2:
-                valid_centroids.append((int(cx), int(cy)))  # Ensure centroids are integers
-                valid_Xcentroids_nm.append((int(cx*51)))
-                valid_Ycentroids_nm.append((int(cy*51)))
+            if patch_width // 2 <= x_pix < image.shape[1] - patch_width // 2 and \
+            patch_width // 2 <= y_pix < image.shape[0] - patch_width // 2:
+                valid_centroids.append((int(x_pix), int(y_pix)))  # Ensure centroids are integers
+                #valid_Xcentroids_nm.append((int(x)))
+                #valid_Ycentroids_nm.append((int(y)))
 
         if len(valid_centroids) == 0:
             print("No valid centroids after filtering.")
-            return [], [], [], [], []
+            return [], [], []
 
         # Debug: print valid centroids
-        print(f"Valid centroids: {valid_centroids}")
-        print(f"Ground truth xcentroids: {valid_Xcentroids_nm}")
-        print(f"Ground truth ycentroids: {valid_Xcentroids_nm}")
+        print(f"Ground truth centroids in pixels: {valid_centroids}")
+        #print(f"Ground truth xcentroids: {valid_Xcentroids_nm}")
+        #print(f"Ground truth ycentroids: {valid_Xcentroids_nm}")
 
-        # Create an instance of MLEwT Michael
+        # Create an instance of MLEwT
         track = MLEwT(peak_emission_wavelength,
                                 pixel_width,
                                 magnification,
@@ -244,39 +228,40 @@ class CustomApplication(AppClass):
                                 )
 
         # Process each centroid
-        x_list, y_list, theta_list, phi_list, covariance_list = [], [], [], [], []
-        for i, (cx, cy) in enumerate(valid_centroids, 1):
+        mortensen_results = []
+        for i, (x, y) in enumerate(self.centroids, 1):
             try:
+                x_pix = x / 51
+                y_pix = y / 51
                 # Ensure initpix is a tuple of integers
-                track.initpix = (int(cy), int(cx))
+                track.initpix = (int(y_pix), int(x_pix))
 
                 # Debug: Log inputs to Estimate
-                print(f"Processing centroid {i}: initpix=({cy}, {cx})")
+                print(f"Processing centroid {i}: initpix=({y_pix}, {x_pix})")
 
                 # Call the Estimate method with the full image
                 
-                result = track.Estimate(image)     
-                print(f"result length is: {len(result)}") 
-
-                # Validate and unpack the result
-                if not isinstance(result, (list, tuple)) or len(result) < 7:
-                    raise ValueError(f"Unexpected Estimate result format: {result}")
-
-                x_est, y_est, theta_est, phi_est, cov_mat = result[0], result[1], result[4], result[5], result[6:]
-                x_list.append(x_est)
-                y_list.append(y_est)
-                theta_list.append(theta_est)
-                phi_list.append(phi_est)
-                covariance_list.append(cov_mat)
-
-                # Debug: Print results for this centroid
-                print(f"Centroid {i}: x={x_est}, y={y_est}, theta={theta_est}, phi={phi_est}")
-
+                result = track.Estimate(image)  
+                #mortensen_results.extend(track._observer) 
+                
             except Exception as e:
-                print(f"Error processing centroid {i} at ({cx}, {cy}): {e}")
+                print(f"Error processing centroid {i} at ({x}, {y}): {e}")
                 traceback.print_exc()
 
-        return x_list, y_list, theta_list, phi_list, covariance_list, valid_Xcentroids_nm, valid_Ycentroids_nm
+        mortensen_results.extend(track._observer)
+        base_dir = "/home/wgq72938/Documents/Hinterer/fixed-dipole-issue/mortensen/simulation_results"
+        latest_dataset_dir = self.get_latest_dataset_directory(base_dir)
+
+        # Define the file path inside the latest dataset folder
+        output_file = os.path.join(latest_dataset_dir, "Mortensen.csv")
+
+        # Save the DataFrame
+        dataframes = pd.DataFrame(mortensen_results, columns=["x est", "x err", "y est", "y err", "N", "b", "azim angle", "err azim", "polar ang", "err polar" ])
+        dataframes.to_csv(output_file, index=False)
+
+        print(f"Mortensen.csv saved to: {output_file}")
+
+        return dataframes
     
     def analyse_simulation(self, png_file, **mortensen_params):
         """
@@ -288,16 +273,20 @@ class CustomApplication(AppClass):
         if image is None:
             raise FileNotFoundError(f"Image not found at {png_file}")
         
+        # Ensure centroids are available
+        if not hasattr(self, 'centroids') or not self.centroids:
+            raise ValueError("Centroids not found. Run simulation3() first.")
+        
         # Perform Mortensen estimation
-        x_list, y_list, theta_list, phi_list, covariance_list = self.mortensen_single_frame(
+        dataframes = self.mortensen_single_frame(
             image=image,
             current_frame_number=1,
-            centroids_image_coords = detected_centroids,
+            centroids_image_coords = self.centroids,  
             **mortensen_params
-        )
+        )   
 
-        print(f"Results:\n X: {x_list}\n Y: {y_list}\n Theta: {theta_list}\n Phi: {phi_list}\n Covariance: {covariance_list}")
-        return x_list, y_list, theta_list, phi_list, covariance_list
+        #print(f"Results:\n X: {x_list}\n Y: {y_list}\n Theta: {theta_list}\n Phi: {phi_list}\n Covariance: {covariance_list}")
+        return dataframes
 
 if __name__ == "__main__":
 
@@ -307,22 +296,26 @@ if __name__ == "__main__":
     app_instance._args = args
 
     # Run simulation3
-    centroids = app_instance.simulation3()
+    app_instance.simulation3()    # centroids =
+
+     # Ensure centroids are available
+    if not hasattr(app_instance, 'centroids') or not app_instance.centroids:
+        raise ValueError("Centroids not found. Ensure simulation3() sets self.centroids.")
 
     # Example usage for finding centroids
     png_file = app_instance.wait_for_file(file_extension="png")
     print(f"png_file type: {type(png_file)}, value: {png_file}")
     
-    default_output_path_detected = "/home/wgq72938/Documents/Hinterer/fixed-dipole-issue/mortensen/detected_centroids.png"
-    detected_centroids = app_instance.find_centroids(png_file, default_output_path_detected)
-    print(f"Detected centroids: {detected_centroids}") 
+    #default_output_path_detected = "/home/wgq72938/Documents/Hinterer/fixed-dipole-issue/mortensen/detected_centroids.png"
+    #detected_centroids = app_instance.find_centroids(png_file, default_output_path_detected)
+    #print(f"Detected centroids: {detected_centroids}") 
+    
     
     # Draw patches around detected centroids and store patch coordinates 
-    patches_output_path = "/home/wgq72938/Documents/Hinterer/fixed-dipole-issue/mortensen/patches.png" 
-    patch_coords = app_instance.draw_patches(png_file, detected_centroids, patches_output_path)   
+    #patches_output_path = "/home/wgq72938/Documents/Hinterer/fixed-dipole-issue/mortensen/patches.png" 
+    #patch_coords = app_instance.draw_patches(png_file, detected_centroids, patches_output_path)   
 
     # Mortensen fit
-    png_file = app_instance.wait_for_file(file_extension="png")
     home = os.getenv('HOME')
     norm_file = os.path.join(home, 'dipolenorm.npy')
 
@@ -335,12 +328,30 @@ if __name__ == "__main__":
         "ref_ind_immersion": 1.515,
         "ref_ind_buffer": 1.31,
         "inverse_gain": 0.09,
-        "initvals": np.array([0.1, 0.1, 100, 20000, 2, 2.3]),
+        "initvals": np.array([0.1, 0.1, 100, 2000, 2, 2.3]),
         "initpix": [261, 47],
         "deltapix": 6,
         "Sfloor": 100,
         "sigma_noise": 1,
         "norm_file": norm_file,
     } 
-    x, y, theta, phi, cov = app_instance.analyse_simulation(png_file, **mortensen_params)
+    dataframes = app_instance.analyse_simulation(png_file, **mortensen_params)
+    
+
+
+
+
+    
+    
     #print(f"x: {x}, y: {y}, theta: {theta}, phi: {phi}, cov: {cov}")
+    #fname='/home/wgq72938/Documents/Hinterer/fixed-dipole-issue/mortensen/simulation_results/dataset_250127_1359/image_stack_fixdip_simulation.hdf5'
+    #h5 = h5py.File(fname)
+    #h5.keys()
+    #h5['ground_truth']
+    #gt = np.array(h5['ground_truth'])
+    #h5['ground_truth'].attrs['__columns__']
+    #array(['x', 'y', 'ilk', 'id', 'channel', 'azimuth', 'polar'], dtype=object)
+    #gt[:,-1]
+    #print(h5['ground_truth'].attrs['__columns__'])
+    #print(gt)
+    
