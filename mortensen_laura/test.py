@@ -36,6 +36,13 @@ class DipolePSFGenerator:
         dipole_psf = dipole_psf / dipole_psf.sum() * n_photons
         
         return dipole_psf
+        
+def mortensen_fit():
+    
+    psf_generator = DipolePSFGenerator(image_size, pixel_size, wavelength, n_objective, n_sample, magnification, NA, norm_file)
+    datamatrix= psf_generator(theta, phi, image_size[1]//2, image_size[0]//2)
+    track=MLEwT(psf_generator)
+    track.Estimate(datamatrix)
 
 
 def main():
