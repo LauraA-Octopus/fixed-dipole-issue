@@ -17,13 +17,14 @@ import warnings
 warnings.filterwarnings('error')
 
 import numpy as np
+import math
 import os
 
 from numpy import pi, shape, array, ravel, zeros, arange
 from numpy import fabs, diag, around, exp, sqrt, log
 from numpy import sin, cos
 from numpy.linalg import inv
-from scipy.special import i1, jn, gamma, erf, gammaln
+from scipy.special import i1, jn, gamma, erf, loggamma
 from scipy.optimize import fmin_powell
 from numint import qromb
 #from numint import qromb
@@ -113,7 +114,6 @@ class dipdistr:
             integrand=etap/sqrt(cos(eta))*(self.Eppar(etap)-self.Espar(etap))
             return integrand
 
-        print(f"etapmed: {self.etapmed}, etapmax: {self.etapmax}")
         self.b0sub_norm=qromb(Integrand0_sub,0.0,self.etapmed,1e-4)
         self.b0sub_mean=qromb(lambda etap: Integrand0_sub(etap)*etap,0.0,self.etapmed,1e-4)\
                          /self.b0sub_norm
@@ -743,14 +743,6 @@ class dipdistr:
 class LogLikelihood:
     """ Class defining the log-likelihood function maximized in MLE."""
 
-    #def __init__(self,counts, a,wl,n,n0,M,NA,pinit, norm_file):
-    #    self.counts=counts
-    #    self.a=a
-    #    self.wl=wl
-    #    self.NA=NA
-    #    self.n=n
-    #    self.n0=n0
-    #    self.M=M
     def __init__(self, counts, psf_generator):
 
         self.counts = counts
@@ -761,12 +753,19 @@ class LogLikelihood:
     def Value(self,x):
         
         counts=self.counts
-        mux,muy,theta,phi=x
+        phi,theta,mux,muy,n_photons=x
 
         # Calculate log-likelihood
-        model_image = self.psf_generator(theta, phi, mux, muy)
-        log_likelihood = np.sum(counts * np.log(model_image) - model_image - gammaln(counts + 1))
-        print(f"loglikelihood is: {-log_likelihood}")
+        model_image = self.psf_generator(phi, theta, mux, muy, n_photons)
+
+        # Check for zero or negative values
+        if np.any(model_image <= 0):
+            print("Warning: model_image contains zero or negative values!")
+            return np.inf  # Return a large penalty to avoid breaking optimization
+        
+        # Use Stirling's approx for ln(counts!) ~ counts*ln(counts)-counts - good for large numbers 
+        ln_factorial = counts * np.log(counts) - counts
+        log_likelihood = np.sum(counts * np.log(model_image) - model_image - ln_factorial)
 
         return -log_likelihood
 
@@ -838,18 +837,22 @@ class MLEwT:
 
         # Entire data matrix
         counts=datamatrix
-        print(f"counts inside Estimate() 1: {counts}, shape: {counts.shape}")
+        #print(f"counts inside Estimate() 1: {counts}, shape: {counts.shape}")
 
         
         # Transformation of initial values
         if not isinstance(self.initvals, (list, np.ndarray)):
             raise ValueError(f"Expected initvals to be a list or np.ndarray of 6 elements, but got {self.initvals} {type(self.initvals)}")
         
-        pinit=zeros(6)
-        pinit[0:2]=self.initvals[0:2]   # mux,muy
-        pinit[2]=sqrt(self.initvals[2]) # N
-        pinit[3]=self.initvals[3]       # theta
-        pinit[4]=self.initvals[4]       # phi
+        pinit=zeros(5)
+        pinit[0]=self.initvals[0]       # phi
+        pinit[1]=self.initvals[1]       # theta
+        pinit[2]=self.initvals[2]       # mux
+        pinit[3]=self.initvals[3]       # muy
+        pinit[4]=sqrt(self.initvals[4]) # n_photons
+
+        #print(f"pinit is: {pinit}")
+        
         
         # Create instance of LogLikelihood object
         ll=LogLikelihood(counts, self.psf_generator)
@@ -876,25 +879,25 @@ class MLEwT:
         #                             array([self.mux,self.muy]),est[4],est[5])
 
         # Add escess noise
-        covarmatrix*=2.0
+        #covarmatrix*=2.0
 
-        errorbars=sqrt(diag(covarmatrix))
+        #errorbars=sqrt(diag(covarmatrix))
 
-        self._observer.append([
-            self.a*xpix+est[0], errorbars[0],
-            self.a*ypix+est[1], errorbars[1],
-            est[2], est[3],
-            est[4], errorbars[2],
-            est[5], errorbars[3],
-            ])
+        #self._observer.append([
+        #    self.a*xpix+est[0], errorbars[0],
+        #    self.a*ypix+est[1], errorbars[1],
+        #    est[2], est[3],
+        #    est[4], errorbars[2],
+        #    est[5], errorbars[3],
+        #    ])
 
-        if self._verbose:
-            print("\nx coordinate [nm] = ", around(self.a*xpix+est[0],1),'+/-',around(errorbars[0],1))
-            print("y coordinate [nm] = ", around(self.a*ypix+est[1],1),'+/-',around(errorbars[1],1))
-            print("azimuthal angle [rad] = ", around(est[4],2),'+/-',around(errorbars[2],3))
-            print("polar angle [rad] = ", around(est[5],2),'+/-',around(errorbars[3],3))
-            print('')
-            print(covarmatrix)
+        #if self._verbose:
+        #    print("\nx coordinate [nm] = ", around(self.a*xpix+est[0],1),'+/-',around(errorbars[0],1))
+        #    print("y coordinate [nm] = ", around(self.a*ypix+est[1],1),'+/-',around(errorbars[1],1))
+        #    print("azimuthal angle [rad] = ", around(est[4],2),'+/-',around(errorbars[2],3))
+        #    print("polar angle [rad] = ", around(est[5],2),'+/-',around(errorbars[3],3))
+        #    print('')
+        #    print(covarmatrix)
 
         return est
 
@@ -941,32 +944,33 @@ class MLEwTcovar:
         # Define instance of dipole PSF
         self.dip=dipdistr(self.wl,self.n,self.n0,self.M,self.NA, norm_file)
 
-    def Probability(self,mu,theta,phi):
+    #def Probability(self,mu,theta,phi):
 
-        a=self.a
-        npix=self.npix
+    #    a=self.a
+    #    npix=self.npix
 
         # Center pixel coordinates in one dimension
-        posvec=arange(-(npix-1.0)/2.0,npix/2.0,1.0)*a
+    #    posvec=arange(-(npix-1.0)/2.0,npix/2.0,1.0)*a
+        
         # Matrix of distances from PSF center to pixel centers
         #distmat=zeros((npix,npix))
         # Matrix of expected photon counts
-        p=zeros((npix,npix))
+    #    p=zeros((npix,npix))
 
         # -- Calculate expected photon values in small pixels
         #    These are calculated by approximating the integral of
         #    the PSF over a pixel to leading order in the pixel width.
 
-        for i in range(npix):
-            for j in range(npix):
-                x=posvec[i]-mu[0]
-                y=posvec[j]-mu[1]
+    #    for i in range(npix):
+    #        for j in range(npix):
+    #            x=posvec[i]-mu[0]
+    #            y=posvec[j]-mu[1]
 
-                p[j,i]=self.dip.PSF_approx(x,y,theta,phi)
+    #            p[j,i]=self.dip.PSF_approx(phi,theta,x,y)
 
         # Expected photon counts (using 1. order approximation over small pixels)
-        p*=(a**2)
-        return p
+    #    p*=(a**2)
+    #    return p
 
     def Derivatives(self,mu,theta,phi):
 
@@ -1009,45 +1013,17 @@ class MLEwTcovar:
     def CovarianceMatrix(self,N,b,mu,theta,phi):
         return inv(self.FisherMatrix(N,b,mu,theta,phi))
 
-def example(norm_file):
-
-    from test import DipolePSFGenerator
-
-    psf_generator = DipolePSFGenerator(image_size, pixel_size, wavelength, n_objective, n_sample, magnification, NA, norm_file)
-    datamatrix= psf_generator(theta, phi, image_size[1]//2, image_size[0]//2)
-    #np.loadtxt('/home/wgq72938/Documents/octo-cryoclem-smlm/third_party/MCSF2010/fixed_dipole/data_fixed.txt')
-
-    wl=500.0
-    a=51.0
-    M=215.0
-    NA=2.17
-    n=1.52
-    n0=1.31
-
-    deltapix=7
-
-    mux=0.1
-    muy=0.1
-    N=20000.0
-    theta=2.0
-    phi=2.3
-    
-    initvals = array([mux, muy, N, theta, phi])
-    initpix = (261,47)
-    
-     
-    track=MLEwT(wl,a,M,NA,n,n0, initvals,initpix,deltapix, norm_file, psf_generator)
-
-    track.Estimate(datamatrix)
-
-
 
 if __name__=='__main__':
     home = os.getenv('HOME')
     norm_file = os.path.join(home, 'dipolenorm.npy')
     #example(norm_file)
+
+
+
+
 '''
-TODO: 1) in test.py crea una funzione mortensen_fit() che sia simile a example ma la rimpiazzi 
+TODO: 
 2) sposta la classe dipdistr in test.py per evitare il circular import e importa DipolePSFGenerator all'inizio
 3) Controlla che le est siano corrette
 4) Modifica MLEwTCov inserendo il psf_generator e rimuovendo codice duplicato o non utile
