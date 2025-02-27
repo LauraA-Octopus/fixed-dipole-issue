@@ -77,56 +77,48 @@ class DipolePSFGenerator:
 
         return result
     
-def main():
+def run_mortensen_fit(phi, theta):
+    """
+    Runs the Mortensen fit for given phi and theta, returning the results and ground truth.
+    """
+    # Define parameters
+    image_size = (18, 18)  
+    pixel_size = 51  
+    wavelength = 500  
+    n_objective = 2.17  
+    n_sample = 1.31  
+    magnification = 215  
+    NA = 2.17  
+    norm_file = "/home/wgq72938/dipolenorm.npy"
+    n_photons = 2000
 
-    # Read angles from command-line arguments
+    # Define dipole position
+    x_pos = 0  
+    y_pos = 0 
+    
+    # Create PSF generator instance
+    psf_generator = DipolePSFGenerator(image_size, pixel_size, wavelength, n_objective, n_sample, magnification, NA, norm_file)    
+
+    # Generate dipole PSF
+    dipole_psf = psf_generator(phi, theta, x_pos, y_pos, n_photons)
+    dipole_psf_noisy = np.random.poisson(dipole_psf)
+
+    # Run Mortensen fit
+    results = psf_generator.mortensen_fit(dipole_psf_noisy, theta, phi)
+    
+    # Return results instead of printing
+    return results, [phi, theta, x_pos, y_pos, n_photons]
+
+# Prevent script from running when imported
+if __name__ == "__main__":
     if len(sys.argv) != 3:
         print("Usage: python test.py <phi> <theta>")
         sys.exit(1)
 
-    phi = float(sys.argv[1])  # Read phi from command line
-    theta = float(sys.argv[2])  # Read theta from command line
+    phi = float(sys.argv[1])
+    theta = float(sys.argv[2])
 
-    # Define parameters
-    image_size = (18, 18)  # Image dimensions
-    pixel_size = 51  # nm per pixel 
-    wavelength = 500  # nm
-    n_objective = 2.17  # Refractive index of objective
-    n_sample = 1.31  # Refractive index of sample
-    magnification = 215  # Objective magnification
-    NA = 2.17  # Numerical Aperture
-    norm_file = "/home/wgq72938/dipolenorm.npy"
-    n_photons = 2000
+    results, ground_truth = run_mortensen_fit(phi, theta)
     
-    # Create PSF generator instance
-    psf_generator = DipolePSFGenerator(image_size, pixel_size,
-                                       wavelength, n_objective, n_sample,
-                                       magnification, NA, norm_file)
-
-    # Define theta and phi for simulated dipole
-    #theta = 0  #np.pi/2  
-    #phi   = 0  #np.pi/2  
-
-    # Define simulated dipole position
-    x_pos = 0  #np.random.uniform(-image_size[1]//2, image_size[1]//2)
-    y_pos = 0  #np.random.uniform(-image_size[0]//2, image_size[0]//2) 
-
-    # Generate the dipole PSF
-    dipole_psf = psf_generator(phi, theta, x_pos, y_pos, n_photons)
-    dipole_psf_noisy = np.random.poisson(dipole_psf)
-
-    # Create a figure with a single subplot
-    plt.figure(figsize=(5, 5))  
-    plt.imshow(dipole_psf_noisy, cmap='gray', interpolation='nearest')
-    plt.title(f"Theta = {theta:.2f}, Phi = {phi:.2f}\nX = {x_pos:.2f}, Y = {y_pos:.2f}")
-    plt.axis('off')
-    #plt.show()
-
-    # Run Mortensen fit 
-    results = psf_generator.mortensen_fit(dipole_psf_noisy, theta, phi)
     print(f"Results from the Mortensen fit are:  {', '.join(map(str, results))}")    
-    print(f"Ground truth are: {phi}, {theta}, {x_pos}, {y_pos}, {n_photons}")
-    
-
-if __name__ == "__main__":
-    main()
+    print(f"Ground truth are: {', '.join(map(str, ground_truth))}")

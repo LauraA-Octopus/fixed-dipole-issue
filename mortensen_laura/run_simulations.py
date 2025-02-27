@@ -1,37 +1,28 @@
-import subprocess
 import numpy as np
+import test
 from save_results import save_results_to_csv
 
 def run_test(phi, theta, filename, num_repeats=3):
     """
-    Runs test.py with given phi and theta values, num_repeats times, and saves results to a specified CSV file.
+    Runs the Mortensen fit from test.py directly via function call.
     """
     for _ in range(num_repeats):
-        process = subprocess.run(["python", "test.py", str(phi), str(theta)], capture_output=True, text=True)
-        
-        # Extract results from test.py output
-        output_lines = process.stdout.strip().split("\n")
-        result_line = [line for line in output_lines if "Results from the Mortensen fit are:" in line]
-        gt_line = [line for line in output_lines if "Ground truth are:" in line]
-        
-        if result_line and gt_line:
-            try:
-                # Extract estimated results
-                result_str = result_line[0].split(":")[1].strip()
-                results = list(map(float,result_str.split(",")))    
-                print(f"Mortensen fitting results are: {results}")
-                
-                # Extract ground truth values
-                ground_truth_str = gt_line[0].split(":")[1].strip()
-                ground_truth = list(map(float, ground_truth_str.split(",")))
-                print(f"Extracted ground truth string: {ground_truth}")
-                
-                # Save results
-                save_results_to_csv(results, ground_truth, filename)
+        try:
+            results, ground_truth = test.run_mortensen_fit(phi, theta)
 
-            except ValueError as e:
-                print(f"Error parsing results: {e}")
-                continue
+            results = list(map(float, results))  
+            ground_truth = list(map(float, ground_truth))  
+
+            print(f"Mortensen fitting results are: {results}")
+            print(f"Extracted ground truth string: {ground_truth}")
+
+            # Save results
+            save_results_to_csv(results, ground_truth, filename)
+
+        except ValueError as e:
+            print(f"Error parsing results: {e}")
+            continue
+
 
 def main():
     # Define theta and phi values

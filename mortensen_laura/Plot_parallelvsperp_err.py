@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 folder = os.path.expanduser('~/Documents/Hinterer/fixed-dipole-issue/mortensen_laura')
 plot_folder = os.path.join(folder, 'plots/2000Photons')
 os.makedirs(plot_folder, exist_ok=True)
-file_path = os.path.join(folder, "results_phi_264.csv")
+file_path = os.path.join(folder, "results_theta_22.5.csv")
 
 # Extract angle and type (phi or theta) from file name
 filename_parts = os.path.basename(file_path).split('_')
@@ -35,8 +35,8 @@ results['parallel_error'] = parallel_error
 results['perpendicular_error'] = perpendicular_error
 
 # Calculate theta_err and phi_err
-theta_err = results['theta_true'] - results['theta_est']
-phi_err = results['phi_true'] - results['phi_est']
+theta_err = results['theta_est'] - results['theta_true']
+phi_err = results['phi_est'] - results['phi_true']
 
 # Save the updated CSV file
 results.to_csv(file_path, index=False)
@@ -52,65 +52,64 @@ def save_plot():
 
 # Scatter plot: parallel_error vs theta
 plt.figure(figsize=(8, 5))
-plt.scatter(results['theta_est'], results['parallel_error'], color='blue', alpha=0.6)
-plt.xlabel('theta')
-plt.ylabel('Parallel Error')
-plt.title(f'{angle_type} = {angle_value} theta = [0, 1, 2, ..., 90]')
+plt.scatter(results['phi_est'], results['parallel_error'], color='blue', alpha=0.6)
+plt.xlabel('phi [rad]')
+plt.ylabel('Parallel Error [nm]')
+plt.title(f'{angle_type} = {angle_value} phi = [0, 4, 8, ..., 360]')
 plt.grid(True)
 save_plot()
 
 # Scatter plot: perpendicular_error vs theta
 plt.figure(figsize=(8, 5))
-plt.scatter(results['theta_est'], results['perpendicular_error'], color='red', alpha=0.6)
-plt.xlabel('theta')
-plt.ylabel('Perpendicular Error')
-plt.title(f'{angle_type} = {angle_value} theta = [0, 1, 2, ..., 90]')
+plt.scatter(results['phi_est'], results['perpendicular_error'], color='red', alpha=0.6)
+plt.xlabel('phi [rad]')
+plt.ylabel('Perpendicular Error [nm]')
+plt.title(f'{angle_type} = {angle_value} phi = [0, 4, 8, ..., 360]')
 plt.grid(True)
 save_plot()
 
 # Scatter plot: perpendicular_error vs parallel_error
 plt.figure(figsize=(8, 5))
 plt.scatter(results['parallel_error'], results['perpendicular_error'], color='purple', alpha=0.6)
-plt.xlabel('Parallel Error')
-plt.ylabel('Perpendicular Error')
-plt.title(f'{angle_type} = {angle_value} theta = [0, 1, 2, ..., 90]')
+plt.xlabel('Parallel Error [nm]')
+plt.ylabel('Perpendicular Error [nm]')
+plt.title(f'{angle_type} = {angle_value} phi = [0, 4, 8, ..., 360]')
 plt.grid(True)
 save_plot()
 
 # Histogram: Frequency vs parallel_error
 plt.figure(figsize=(8, 5))
 plt.hist(results['parallel_error'], bins=30, color='blue', alpha=0.7, edgecolor='black')
-plt.xlabel('Parallel Error')
+plt.xlabel('Parallel Error [nm]')
 plt.ylabel('Frequency')
-plt.title(f'{angle_type} = {angle_value} theta = [0, 1, 2, ..., 90]')
+plt.title(f'{angle_type} = {angle_value} phi = [0, 4, 8, ..., 360]')
 plt.grid(True)
 save_plot()
 
 # Histogram: Frequency vs perpendicular_error
 plt.figure(figsize=(8, 5))
 plt.hist(results['perpendicular_error'], bins=30, color='red', alpha=0.7, edgecolor='black')
-plt.xlabel('Perpendicular Error')
+plt.xlabel('Perpendicular Error [nm]')
 plt.ylabel('Frequency')
-plt.title(f'{angle_type} = {angle_value} theta = [0, 1, 2, ..., 90]')
+plt.title(f'{angle_type} = {angle_value} phi = [0, 4, 8, ..., 360]')
 plt.grid(True)
 save_plot()
 
-# Plot histogram for theta_err
-#plt.figure(figsize=(12, 6))
+# Plot histogram for theta_err and phi_err
+plt.figure(figsize=(12, 6))
+plt.subplot(1, 2, 1)
+plt.hist(theta_err, bins=30, color='blue', alpha=0.7)
+plt.title('Histogram of theta_err')
+plt.xlabel('theta_true [rad]')
+plt.ylabel('theta_err [rad]')
+plt.grid(True)
 
-#plt.subplot(1, 2, 1)
-#plt.hist(theta_err, bins=30, color='blue', alpha=0.7)
-#plt.title('Histogram of theta_err')
-#plt.xlabel('theta_err')
-#plt.ylabel('Frequency')
-#plt.grid(True)
-#save_plot()
-
-# Plot histogram for phi_err
-#plt.subplot(1, 2, 2)
-#plt.hist(phi_err, bins=30, color='red', alpha=0.7)
-#plt.title('Histogram of phi_err')
-#plt.xlabel('phi_err')
-#plt.ylabel('Frequency')
-#plt.grid(True)
-#save_plot()
+plt.subplot(1, 2, 2)
+plt.hist(phi_err, bins=30, color='red', alpha=0.7)
+plt.title('Histogram of phi_err')
+plt.xlabel('phi_true [rad]')
+plt.ylabel('phi_err [rad]')
+plt.grid(True)
+plt.tight_layout()
+save_plot()  
+plt.show()  
