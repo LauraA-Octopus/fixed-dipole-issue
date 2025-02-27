@@ -1,7 +1,8 @@
 import numpy as np
+import sys
 import matplotlib.pyplot as plt
 from MLEwT_fixed import dipdistr, MLEwT
-from save_results import save_results_to_csv
+#from save_results import save_results_to_csv
 
 class DipolePSFGenerator:
     def __init__(self, image_size, pixel_size, wavelength, n_objective, n_sample, magnification, NA, norm_file):
@@ -42,31 +43,31 @@ class DipolePSFGenerator:
         
         return dipole_psf
 
-    def mortensen_fit(self, dipole_psf):
+    def mortensen_fit(self, dipole_psf, theta, phi):
         
         # Define parameters
-        deltapix = 0
+        deltapix = 9
         
         # Generate the initial mux, muy in pixels around the center of the image (9, 9)
         mux_pix = np.random.uniform(self.image_size[1] / 2 - 1, self.image_size[1]/ 2 + 1)
         muy_pix = np.random.uniform((self.image_size[0] - 1)/ 2 - 1, (self.image_size[0] - 1) / 2 + 1)
-        print(f"the initial vals of mux muy: {mux_pix, muy_pix}")
+        #print(f"the initial vals of mux muy: {mux_pix, muy_pix}")
 
         # Convert to real coordinates (0, 0)
-        mux_nm = np.random.uniform(0 - 1, 0 + 1)    #(mux_pix - (self.image_size[1]) / 2) * self.pixel_size
-        muy_nm = np.random.uniform(0 - 1, 0 + 1)    #(muy_pix - (self.image_size[0]) / 2) * self.pixel_size
-        print(f"converted real-space mux, muy: {mux_nm, muy_nm}")
+        mux_nm = np.random.uniform(0 - 2, 0 + 2)    #(mux_pix - (self.image_size[1]) / 2) * self.pixel_size
+        muy_nm = np.random.uniform(0 - 2, 0 + 2)    #(muy_pix - (self.image_size[0]) / 2) * self.pixel_size
+        #print(f"converted real-space mux, muy: {mux_nm, muy_nm}")
         
-        init_theta = np.random.uniform(0 - 0.2, 0 + 0.2)    #np.random.uniform(np.pi/2)
-        init_phi = np.random.uniform (np.pi/2 - 0.2, np.pi/2 + 0.2)     #np.random.uniform(np.pi*2)
+        init_theta = np.random.uniform(theta - 0.2, theta + 0.2)
+        init_phi = np.random.uniform(phi - 0.2, phi + 0.2)
 
         init_photons = np.sum(dipole_psf)
         
         initvals = np.array([init_phi, init_theta, mux_nm, muy_nm, init_photons])
-        print("initvals: ", initvals, "size: ", initvals.size)
+        #print("initvals: ", initvals, "size: ", initvals.size)
         
         initpix = (self.image_size[0] // 2, self.image_size[1] // 2) # (ypix, xpix)
-        print(f"initial values for the center pixel (ypixel,xpixel): {initpix}")
+        #print(f"initial values for the center pixel (ypixel,xpixel): {initpix}")
         
         # initvals = the initial values to start the estimate, 
         # initpix = Array of length 2 of initial values for the center pixel (ypixel,xpixel)
@@ -78,6 +79,14 @@ class DipolePSFGenerator:
     
 def main():
 
+    # Read angles from command-line arguments
+    if len(sys.argv) != 3:
+        print("Usage: python test.py <phi> <theta>")
+        sys.exit(1)
+
+    phi = float(sys.argv[1])  # Read phi from command line
+    theta = float(sys.argv[2])  # Read theta from command line
+
     # Define parameters
     image_size = (18, 18)  # Image dimensions
     pixel_size = 51  # nm per pixel 
@@ -87,7 +96,7 @@ def main():
     magnification = 215  # Objective magnification
     NA = 2.17  # Numerical Aperture
     norm_file = "/home/wgq72938/dipolenorm.npy"
-    n_photons = 20000
+    n_photons = 2000
     
     # Create PSF generator instance
     psf_generator = DipolePSFGenerator(image_size, pixel_size,
@@ -95,8 +104,8 @@ def main():
                                        magnification, NA, norm_file)
 
     # Define theta and phi for simulated dipole
-    theta = 0  #np.pi/2  
-    phi   = np.pi/2  
+    #theta = 0  #np.pi/2  
+    #phi   = 0  #np.pi/2  
 
     # Define simulated dipole position
     x_pos = 0  #np.random.uniform(-image_size[1]//2, image_size[1]//2)
@@ -104,23 +113,25 @@ def main():
 
     # Generate the dipole PSF
     dipole_psf = psf_generator(phi, theta, x_pos, y_pos, n_photons)
+    dipole_psf_noisy = np.random.poisson(dipole_psf)
 
     # Create a figure with a single subplot
     plt.figure(figsize=(5, 5))  
-    plt.imshow(dipole_psf, cmap='gray', interpolation='nearest')
+    plt.imshow(dipole_psf_noisy, cmap='gray', interpolation='nearest')
     plt.title(f"Theta = {theta:.2f}, Phi = {phi:.2f}\nX = {x_pos:.2f}, Y = {y_pos:.2f}")
     plt.axis('off')
     #plt.show()
 
-    # Run Mortensen fit for an example theta=0 and phi=0
-    results = psf_generator.mortensen_fit(dipole_psf)
-    print(f"Results from the Mortensen fit are: {results}")
+    # Run Mortensen fit 
+    results = psf_generator.mortensen_fit(dipole_psf_noisy, theta, phi)
+    print(f"Results from the Mortensen fit are:  {', '.join(map(str, results))}")    
     print(f"Ground truth are: {phi}, {theta}, {x_pos}, {y_pos}, {n_photons}")
 
     # Save results to csv file
-    save_results_to_csv(results, (phi, theta, x_pos, y_pos, n_photons))
+    #save_results_to_csv(results, (phi, theta, x_pos, y_pos, n_photons))
 
     
 
 if __name__ == "__main__":
     main()
+
