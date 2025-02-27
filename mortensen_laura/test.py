@@ -54,8 +54,8 @@ class DipolePSFGenerator:
         #print(f"the initial vals of mux muy: {mux_pix, muy_pix}")
 
         # Convert to real coordinates (0, 0)
-        mux_nm = np.random.uniform(0 - 2, 0 + 2)    #(mux_pix - (self.image_size[1]) / 2) * self.pixel_size
-        muy_nm = np.random.uniform(0 - 2, 0 + 2)    #(muy_pix - (self.image_size[0]) / 2) * self.pixel_size
+        mux_nm = np.random.uniform(0 - 2, 0 + 2)    
+        muy_nm = np.random.uniform(0 - 2, 0 + 2)    
         #print(f"converted real-space mux, muy: {mux_nm, muy_nm}")
         
         init_theta = np.random.uniform(theta - 0.2, theta + 0.2)
@@ -126,12 +126,7 @@ def main():
     results = psf_generator.mortensen_fit(dipole_psf_noisy, theta, phi)
     print(f"Results from the Mortensen fit are:  {', '.join(map(str, results))}")    
     print(f"Ground truth are: {phi}, {theta}, {x_pos}, {y_pos}, {n_photons}")
-
-    # Save results to csv file
-    #save_results_to_csv(results, (phi, theta, x_pos, y_pos, n_photons))
-
     
 
 if __name__ == "__main__":
     main()
-
