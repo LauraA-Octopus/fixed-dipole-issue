@@ -24,7 +24,7 @@ from numpy import pi, shape, array, ravel, zeros, arange
 from numpy import fabs, diag, around, exp, sqrt, log
 from numpy import sin, cos
 from numpy.linalg import inv
-from scipy.special import i1, jn, gamma, erf, loggamma
+from scipy.special import i1, jn, gamma, erf, gammaln
 from scipy.optimize import fmin_powell
 from numint import qromb
 #from numint import qromb
@@ -757,14 +757,13 @@ class LogLikelihood:
 
         # Calculate log-likelihood
         model_image = self.psf_generator(phi, theta, mux, muy, n_photons)
-
+        
         # Check for zero or negative values
         if np.any(model_image <= 0):
             print("Warning: model_image contains zero or negative values!")
             return np.inf  # Return a large penalty to avoid breaking optimization
-        
-        # Use Stirling's approx for ln(counts!) ~ counts*ln(counts)-counts - good for large numbers 
-        ln_factorial = counts * np.log(counts) - counts
+         
+        ln_factorial = gammaln(counts + 1)
         log_likelihood = np.sum(counts * np.log(model_image) - model_image - ln_factorial)
 
         return -log_likelihood
