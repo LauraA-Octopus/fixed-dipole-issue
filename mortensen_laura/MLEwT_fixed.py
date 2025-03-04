@@ -25,7 +25,7 @@ from numpy import fabs, diag, around, exp, sqrt, log
 from numpy import sin, cos
 from numpy.linalg import inv
 from scipy.special import i1, jn, gamma, erf, gammaln
-from scipy.optimize import fmin_powell
+from scipy.optimize import fmin_powell, minimize
 from numint import qromb
 #from numint import qromb
 
@@ -753,15 +753,15 @@ class LogLikelihood:
     def Value(self,x):
         
         counts=self.counts
-        phi,theta,mux,muy,n_photons=x
+        phi,theta,mux_nm,muy_nm,n_photons=x
 
         # Calculate log-likelihood
-        model_image = self.psf_generator(phi, theta, mux, muy, n_photons)
+        model_image = self.psf_generator(phi, theta, mux_nm, muy_nm, n_photons)
         
         # Check for zero or negative values
-        if np.any(model_image <= 0):
-            print("Warning: model_image contains zero or negative values!")
-            return np.inf  # Return a large penalty to avoid breaking optimization
+        if np.any(n_photons <= 0):
+            print("Warning: n_photons in model_image contains negative values!")
+            #return -np.inf  
          
         ln_factorial = gammaln(counts + 1)
         log_likelihood = np.sum(counts * np.log(model_image) - model_image - ln_factorial)
@@ -785,7 +785,7 @@ class MLEwT:
     alpha (float)   : Inverse gain of the EMCCD chip
     Sfloor (float)  : Constant offset of the EMCCD output
     sigma (float)   : Width of the noise distribution in the EMCCD output
-    initvals (array): Array of length 6 of initial values for mux,muy,b,N,theta,phi
+    initvals (array): Array of length 6 of initial values for phi, theta, mux_nm, muy_nm,n_photons
     initpix (array) : Array of length 2 of initial values for the center pixel (ypixel,xpixel)
     deltapix (int)  : The half width of the array to be analyzed
 
@@ -798,13 +798,13 @@ class MLEwT:
     Kim I. Mortensen
     """
 
-    def __init__(self,initvals,initpix, deltapix, psf_generator):
+    def __init__(self,initvals, psf_generator):#initpix, deltapix, psf_generator):
 
         # Store user input
         
         self.initvals=initvals
-        self.initpix=initpix
-        self.deltapix = deltapix
+        #self.initpix=initpix
+        #self.deltapix = deltapix
 
         self.psf_generator = psf_generator
         self._observer = []
@@ -820,19 +820,19 @@ class MLEwT:
     def Estimate(self,datamatrix):
         
         # Validate initpix
-        if not isinstance(self.initpix, (tuple, list)) or len(self.initpix) != 2:
-            raise ValueError(f"Invalid initpix: {self.initpix}. Must be a tuple or list of length 2.")
+        #if not isinstance(self.initpix, (tuple, list)) or len(self.initpix) != 2:
+        #    raise ValueError(f"Invalid initpix: {self.initpix}. Must be a tuple or list of length 2.")
     
 
-        ypix=self.initpix[0]
-        xpix=self.initpix[1]
-        deltapix=self.deltapix
+        #ypix=self.initpix[0]
+        #xpix=self.initpix[1]
+        #deltapix=self.deltapix
 
-        print(f"The values of x, y, delta are 1: ypix={ypix}, xpix={xpix}, deltapix={deltapix}")
+        #print(f"The values of x, y, delta are 1: ypix={ypix}, xpix={xpix}, deltapix={deltapix}")
 
         # Ensure ypix and xpix are integers
-        if not isinstance(ypix, int) or not isinstance(xpix, int):
-            raise TypeError(f"ypix and xpix must be integers. Got ypix={ypix}, xpix={xpix}.")
+        #if not isinstance(ypix, int) or not isinstance(xpix, int):
+        #    raise TypeError(f"ypix and xpix must be integers. Got ypix={ypix}, xpix={xpix}.")
 
         # Entire data matrix
         counts=datamatrix
@@ -846,8 +846,8 @@ class MLEwT:
         pinit=zeros(5)
         pinit[0]=self.initvals[0]       # phi
         pinit[1]=self.initvals[1]       # theta
-        pinit[2]=self.initvals[2]       # mux
-        pinit[3]=self.initvals[3]       # muy
+        pinit[2]=self.initvals[2]       # mux_nm
+        pinit[3]=self.initvals[3]       # muy_nm
         pinit[4]=sqrt(self.initvals[4]) # n_photons
 
         #print(f"pinit is: {pinit}")
@@ -858,17 +858,30 @@ class MLEwT:
 
         # Perform maximization of the log-likelihood using Powell's method
         #xopt, fopt, xi, direc, iter, funcalls, warnflag=\
-        res=fmin_powell(ll.Value,pinit,ftol=0.0001,maxiter=15,full_output=1, disp=False)
-        est=res[0]
+        bounds = [(0, 2*np.pi), (0, np.pi/2), (-433, 433), (-433, 433), (1e-6, None)]
+        pinit[2] = np.clip(pinit[2], -433, 433)  # Ensure x (mux_nm) is within bounds
+        pinit[3] = np.clip(pinit[3], -433, 433)  # Ensure y (muy_nm) is within bounds
+        self.initvals[2] = np.clip(self.initvals[2], -433, 433)
+        self.initvals[3] = np.clip(self.initvals[3], -433, 433)
+
+        #res=fmin_powell(ll.Value,pinit, ftol=0.0001,maxiter=15,full_output=1, disp=False)
+        res = minimize(ll.Value, pinit, method='Powell', bounds=bounds)
+        est=res.x    #[0]
         # warnflag=res[5]
 
         # Store position estimates relative to initial pixel
-        self.mux=est[0]
-        self.muy=est[1]
+        est[0]                # phi
+        est[1]                # theta
+        self.mux_nm=est[2]    # mux_nm
+        self.muy_nm=est[3]    # muy_nm
+        est[4]                # n_photons
+        #self.mux_nm=est[0]
+        #self.muy_nm=est[1]
 
         # Convert estimates
-        est[2]=est[2]**2
-        est[3]=est[3]**2
+        #est[2]=est[2]**2
+        #est[3]=est[3]**2
+        print(f"est is: {est}")
 
         # Calculate covariance matrix of estimates of position coordinates and angles
         #covar=MLEwTcovar(self.a,self.deltapix*2,self.wl,self.n,
@@ -1017,13 +1030,3 @@ if __name__=='__main__':
     home = os.getenv('HOME')
     norm_file = os.path.join(home, 'dipolenorm.npy')
     #example(norm_file)
-
-
-
-
-'''
-TODO: 
-2) sposta la classe dipdistr in test.py per evitare il circular import e importa DipolePSFGenerator all'inizio
-3) Controlla che le est siano corrette
-4) Modifica MLEwTCov inserendo il psf_generator e rimuovendo codice duplicato o non utile
-'''

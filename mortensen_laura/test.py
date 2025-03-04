@@ -1,5 +1,6 @@
 import numpy as np
 import sys
+import datetime
 import matplotlib.pyplot as plt
 from MLEwT_fixed import dipdistr, MLEwT
 #from save_results import save_results_to_csv
@@ -25,58 +26,54 @@ class DipolePSFGenerator:
     def __call__(self, phi, theta, x_pos, y_pos, n_photons):
         
         # Create position vector
+        # x_pos and y_pos are in nm
         posvec = np.arange(-(self.image_size[0]-1)/2, self.image_size[0]/2) * self.pixel_size
-        #print(f"posvec is: {posvec}")
-        #print(f"The centre of posvec is: {posvec[len(posvec)//2]}")
         dipole_psf = np.zeros(self.image_size)
         
         # Generate PSF
         for i in range(self.image_size[0]):
             for j in range(self.image_size[1]):
-                dipole_psf[j, i] = self.DD.PSF_approx(posvec[i] - x_pos* self.pixel_size, 
-                                                      posvec[j] - y_pos * self.pixel_size,
+                dipole_psf[j, i] = self.DD.PSF_approx(posvec[i] - x_pos, 
+                                                      posvec[j] - y_pos,
                                                       phi, theta, 
                                                       )
-        
         
         dipole_psf = dipole_psf / dipole_psf.sum() * n_photons
         
         return dipole_psf
 
-    def mortensen_fit(self, dipole_psf, theta, phi):
+    def mortensen_fit(self, dipole_psf, init_theta, init_phi):
         
         # Define parameters
-        deltapix = 9
+        #deltapix = 9
         
         # Generate the initial mux, muy in pixels around the center of the image (9, 9)
-        mux_pix = np.random.uniform(self.image_size[1] / 2 - 1, self.image_size[1]/ 2 + 1)
-        muy_pix = np.random.uniform((self.image_size[0] - 1)/ 2 - 1, (self.image_size[0] - 1) / 2 + 1)
+        mux_pix = np.random.uniform(self.image_size[1] / 2 - 0.5, self.image_size[1]/ 2 + 0.5)
+        muy_pix = np.random.uniform((self.image_size[0] - 1)/ 2 - 0.5, (self.image_size[0] - 1) / 2 + 0.5)
         #print(f"the initial vals of mux muy: {mux_pix, muy_pix}")
 
-        # Convert to real coordinates (0, 0)
-        mux_nm = np.random.uniform(0 - 2, 0 + 2)    
-        muy_nm = np.random.uniform(0 - 2, 0 + 2)    
-        #print(f"converted real-space mux, muy: {mux_nm, muy_nm}")
+        # Convert to coordinates in nm
+        mux_nm = np.random.uniform(0 - self.pixel_size/2, 0 + self.pixel_size/2)    
+        muy_nm = np.random.uniform(0 - self.pixel_size/2, 0 + self.pixel_size/2)    
+        print(f"converted real-space mux_nm, muy_nm: {mux_nm, muy_nm}")
         
-        init_theta = np.random.uniform(theta - 0.2, theta + 0.2)
-        init_phi = np.random.uniform(phi - 0.2, phi + 0.2)
+        init_theta = np.random.uniform(0, np.pi/2)
+        init_phi = np.random.uniform(0, 2*np.pi)
 
         init_photons = np.sum(dipole_psf)
         
         initvals = np.array([init_phi, init_theta, mux_nm, muy_nm, init_photons])
-        #print("initvals: ", initvals, "size: ", initvals.size)
+        print("initvals: ", initvals)
         
-        initpix = (self.image_size[0] // 2, self.image_size[1] // 2) # (ypix, xpix)
+        #initpix = (self.image_size[0] // 2, self.image_size[1] // 2) # (ypix, xpix)
         #print(f"initial values for the center pixel (ypixel,xpixel): {initpix}")
         
-        # initvals = the initial values to start the estimate, 
-        # initpix = Array of length 2 of initial values for the center pixel (ypixel,xpixel)
-        # deltapix = half the array to be analysed       
-        track = MLEwT(initvals, initpix, deltapix, self)
+        # initvals = the initial values to start the estimate       
+        track = MLEwT(initvals, self)   #initpix, deltapix, self)
         result = track.Estimate(dipole_psf)
 
         return result
-    
+
 def run_mortensen_fit(phi, theta):
     """
     Runs the Mortensen fit for given phi and theta, returning the results and ground truth.
@@ -90,24 +87,25 @@ def run_mortensen_fit(phi, theta):
     magnification = 215  
     NA = 2.17  
     norm_file = "/home/wgq72938/dipolenorm.npy"
-    n_photons = 2000
+    n_photons = 2000000
 
-    # Define dipole position
-    x_pos = 0  
-    y_pos = 0 
+    # Define dipole ground_truth position in nm
+    x_pos_nm = np.random.uniform(0 - pixel_size/2, 0 + pixel_size/2)  
+    y_pos_nm = np.random.uniform(0 - pixel_size/2, 0 + pixel_size/2) 
     
     # Create PSF generator instance
     psf_generator = DipolePSFGenerator(image_size, pixel_size, wavelength, n_objective, n_sample, magnification, NA, norm_file)    
 
     # Generate dipole PSF
-    dipole_psf = psf_generator(phi, theta, x_pos, y_pos, n_photons)
+    dipole_psf = psf_generator(phi, theta, x_pos_nm, y_pos_nm, n_photons)
     dipole_psf_noisy = np.random.poisson(dipole_psf)
 
     # Run Mortensen fit
     results = psf_generator.mortensen_fit(dipole_psf_noisy, theta, phi)
-    
+    print(f"Results before test main are: {results}")
+
     # Return results instead of printing
-    return results, [phi, theta, x_pos, y_pos, n_photons]
+    return results, [phi, theta, x_pos_nm, y_pos_nm, n_photons]
 
 # Prevent script from running when imported
 if __name__ == "__main__":
