@@ -2,7 +2,7 @@ import numpy as np
 import test
 from save_results import save_results_to_csv
 
-def run_test(phi, theta, filename, num_repeats=3):
+def run_test(phi, theta, filename, num_repeats=20):
     """
     Runs the Mortensen fit from test.py directly via function call.
     """
@@ -29,8 +29,8 @@ def main():
     chosen_thetas = [0, 22.5, 45, 67.5, 90]
     chosen_phis = [0, 45, 135, 180, 225, 270, 315]
     fixed_phis = list(range(0, 361, 4))  
-    fixed_thetas = list(range(0, 91, 1))
-    num_repeats = 3
+    fixed_thetas = list(range(0, 91, 2))
+    num_repeats = 20
 
     # Run tests for each theta and varying phi values
     for theta in chosen_thetas:

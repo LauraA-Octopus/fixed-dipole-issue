@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 
 # File path
 folder = os.path.expanduser('~/Documents/Hinterer/fixed-dipole-issue/mortensen_laura')
-plot_folder = os.path.join(folder, 'plots/')
+plot_folder = os.path.join(folder, 'plots/2000Photons')
 os.makedirs(plot_folder, exist_ok=True)
-file_path = os.path.join(folder, "results_theta_0.csv")
+file_path = os.path.join(folder, "results_theta_90.csv")
 
 # Extract angle and type (phi or theta) from file name
 filename_parts = os.path.basename(file_path).split('_')
@@ -118,6 +118,17 @@ plt.title(f'{angle_type} = {angle_value} phi = [0, 4, 8, ..., 360]')
 plt.grid(True)
 save_plot()
 
+# Function to annotate mean and std deviation on histograms
+def annotate_stats(data, color='black'):
+    mean_val = np.mean(data)
+    std_val = np.std(data)
+    
+    plt.axvline(mean_val, color='black', linestyle='dashed', linewidth=2, label=f'Mean = {mean_val:.2f}')
+    plt.axvline(mean_val + std_val, color='gray', linestyle='dotted', linewidth=2, label=f'Std Dev = {std_val:.2f}')
+    plt.axvline(mean_val - std_val, color='gray', linestyle='dotted', linewidth=2)
+    
+    plt.legend()
+
 # Histogram: Frequency vs parallel_error
 plt.figure(figsize=(8, 5))
 plt.hist(results['parallel_error'], bins=30, color='blue', alpha=0.7, edgecolor='black')
@@ -125,6 +136,7 @@ plt.xlabel('Parallel Error [nm]')
 plt.ylabel('Counts')
 plt.title(f'{angle_type} = {angle_value} phi = [0, 4, 8, ..., 360]')
 plt.grid(True)
+annotate_stats(results['parallel_error'])
 save_plot()
 
 # Histogram: Frequency vs perpendicular_error
@@ -134,4 +146,25 @@ plt.xlabel('Perpendicular Error [nm]')
 plt.ylabel('Counts')
 plt.title(f'{angle_type} = {angle_value} phi = [0, 4, 8, ..., 360]')
 plt.grid(True)
+annotate_stats(results['perpendicular_error'])
+save_plot()
+
+# Histogram: delta x error
+plt.figure(figsize=(8, 5))
+plt.hist(x_err, bins=30, color='blue', alpha=0.7, edgecolor='black')
+plt.xlabel('x error [nm]')
+plt.ylabel('Counts')
+plt.title(f'{angle_type} = {angle_value} phi = [0, 4, 8, ..., 360]')
+plt.grid(True)
+annotate_stats(x_err)
+save_plot()
+
+# Histogram: delta y error
+plt.figure(figsize=(8, 5))
+plt.hist(y_err, bins=30, color='red', alpha=0.7, edgecolor='black')
+plt.xlabel('y error [nm]')
+plt.ylabel('Counts')
+plt.title(f'{angle_type} = {angle_value} phi = [0, 4, 8, ..., 360]')
+plt.grid(True)
+annotate_stats(y_err)
 save_plot()
