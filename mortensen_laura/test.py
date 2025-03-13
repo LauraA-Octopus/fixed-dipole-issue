@@ -3,10 +3,9 @@ import sys
 import datetime
 import matplotlib.pyplot as plt
 from MLEwT_fixed import dipdistr, MLEwT
-#from save_results import save_results_to_csv
 
 class DipolePSFGenerator:
-    def __init__(self, image_size, pixel_size, wavelength, n_objective, n_sample, magnification, NA, norm_file):
+    def __init__(self, image_size, pixel_size, wavelength, n_objective, n_sample, magnification, NA, norm_file, verbose=False):
         self.image_size = image_size
         self.pixel_size = pixel_size
         self.wavelength = wavelength
@@ -15,7 +14,7 @@ class DipolePSFGenerator:
         self.magnification = magnification
         self.NA = NA
         self.norm_file = norm_file
-        
+        self.verbose = verbose
         
         # Load normalization file
         self.norm_data = np.load(norm_file)
@@ -55,15 +54,13 @@ class DipolePSFGenerator:
         # Convert to coordinates in nm
         mux_nm = np.random.uniform(0 - self.pixel_size/2, 0 + self.pixel_size/2)    
         muy_nm = np.random.uniform(0 - self.pixel_size/2, 0 + self.pixel_size/2)    
-        print(f"converted real-space mux_nm, muy_nm: {mux_nm, muy_nm}")
         
         init_theta = np.random.uniform(0, np.pi/2)
-        init_phi = np.random.uniform(0, 2*np.pi)
+        init_phi = np.random.uniform(0, 2 * np.pi)
 
         init_photons = np.sum(dipole_psf)
         
         initvals = np.array([init_phi, init_theta, mux_nm, muy_nm, init_photons])
-        print("initvals: ", initvals)
         
         #initpix = (self.image_size[0] // 2, self.image_size[1] // 2) # (ypix, xpix)
         #print(f"initial values for the center pixel (ypixel,xpixel): {initpix}")
@@ -102,8 +99,7 @@ def run_mortensen_fit(phi, theta):
 
     # Run Mortensen fit
     results = psf_generator.mortensen_fit(dipole_psf_noisy, theta, phi)
-    print(f"Results before test main are: {results}")
-
+    
     # Return results instead of printing
     return results, [phi, theta, x_pos_nm, y_pos_nm, n_photons]
 

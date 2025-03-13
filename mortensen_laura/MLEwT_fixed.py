@@ -753,14 +753,22 @@ class LogLikelihood:
     def Value(self,x):
         
         counts=self.counts
-        phi,theta,mux_nm,muy_nm,n_photons=x
+        # Transform the reparametrised theta and phi in the original theta and phi here
+        #phi,theta,mux_nm,muy_nm,n_photons=x
+        phi_conv = np.arctan2(x[1], x[0])  # Reconvert x[0], x[1] to phi check the order of 0 and 1 needs to be the same as est
+        theta_conv = 0.5 * np.arccos(x[2])  # Reconvert x[2] to theta
+        
+        mux_nm = x[3]
+        muy_nm = x[4]
+        n_photons = x[5]
 
         # Calculate log-likelihood
-        model_image = self.psf_generator(phi, theta, mux_nm, muy_nm, n_photons)
+        model_image = self.psf_generator(phi_conv, theta_conv, mux_nm, muy_nm, n_photons) # add verbose=True to activate it
         
         # Check for zero or negative values
         if np.any(n_photons <= 0):
-            print("Warning: n_photons in model_image contains negative values!")
+            raise ValueError("n_photons must be positive! Received: {}".format(n_photons))
+            #print("Warning: n_photons in model_image contains negative values!")
             #return -np.inf  
          
         ln_factorial = gammaln(counts + 1)
@@ -843,12 +851,15 @@ class MLEwT:
         if not isinstance(self.initvals, (list, np.ndarray)):
             raise ValueError(f"Expected initvals to be a list or np.ndarray of 6 elements, but got {self.initvals} {type(self.initvals)}")
         
-        pinit=zeros(5)
-        pinit[0]=self.initvals[0]       # phi
-        pinit[1]=self.initvals[1]       # theta
-        pinit[2]=self.initvals[2]       # mux_nm
-        pinit[3]=self.initvals[3]       # muy_nm
-        pinit[4]=sqrt(self.initvals[4]) # n_photons
+        # Reparametrise phi -> sin(phi), cos(phi) this adds a parameter to the fitting
+                       #theta -> cos(2*theta)
+        pinit=zeros(6)
+        pinit[0] = np.cos(self.initvals[0] % 2*pi)       #self.initvals[0] phi reparametrised in cos(phi)
+        pinit[1] = np.sin(self.initvals[0] % 2*pi)       #self.initvals[1] was theta, now reparametrised phi in sin(phi)
+        pinit[2] = np.cos(2 * self.initvals[1] % 2*pi)   #reparametrised theta in cos(2theta)
+        pinit[3] = self.initvals[2]                      # mux_nm
+        pinit[4] = self.initvals[3]                      # muy_nm
+        pinit[5] = self.initvals[4]                      #sqrt(self.initvals[4]) # n_photons
 
         #print(f"pinit is: {pinit}")
         
@@ -858,7 +869,8 @@ class MLEwT:
 
         # Perform maximization of the log-likelihood using Powell's method
         #xopt, fopt, xi, direc, iter, funcalls, warnflag=\
-        bounds = [(0, 2*np.pi), (0, np.pi/2), (-433, 433), (-433, 433), (1e-6, None)]
+        #bounds = [(0, 2*np.pi), (0, np.pi/2), (-433, 433), (-433, 433), (1e-6, None)]
+        bounds = [(-1, 1), (-1, 1), (-1, 1), (-433, 433), (-433, 433), (1e-6, None)]
         pinit[2] = np.clip(pinit[2], -433, 433)  # Ensure x (mux_nm) is within bounds
         pinit[3] = np.clip(pinit[3], -433, 433)  # Ensure y (muy_nm) is within bounds
         self.initvals[2] = np.clip(self.initvals[2], -433, 433)
@@ -870,18 +882,22 @@ class MLEwT:
         # warnflag=res[5]
 
         # Store position estimates relative to initial pixel
-        est[0]                # phi
-        est[1]                # theta
-        self.mux_nm=est[2]    # mux_nm
-        self.muy_nm=est[3]    # muy_nm
-        est[4]                # n_photons
-        #self.mux_nm=est[0]
-        #self.muy_nm=est[1]
+        # retransform the parametrised phi and theta in the original ones in the est
+        self.phi_conv = np.arctan2(est[1], est[0]) # check the order of 1 and 0 
+        self.theta_conv = 0.5 * np.arccos(est[2])
+        #est[0] = phi_est      # phi reconverted
+        #est[1] = theta_est    # theta reconverted
+        self.mux_nm=est[3]    # mux_nm
+        self.muy_nm=est[4]    # muy_nm
+        n_photons = est[5]    # n_photons
 
+        results = [self.phi_conv, self.theta_conv, self.mux_nm, self.muy_nm, n_photons]
+        return results
+        
         # Convert estimates
         #est[2]=est[2]**2
         #est[3]=est[3]**2
-        print(f"est is: {est}")
+        #print(f"est is: {est}")
 
         # Calculate covariance matrix of estimates of position coordinates and angles
         #covar=MLEwTcovar(self.a,self.deltapix*2,self.wl,self.n,
@@ -911,7 +927,7 @@ class MLEwT:
         #    print('')
         #    print(covarmatrix)
 
-        return est
+        #return est
 
 class MLEwTcovar:
     """

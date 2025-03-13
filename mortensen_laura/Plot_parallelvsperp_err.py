@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 
 # File path
 folder = os.path.expanduser('~/Documents/Hinterer/fixed-dipole-issue/mortensen_laura')
-plot_folder = os.path.join(folder, 'plots/2000Photons')
+plot_folder = os.path.join(folder, 'plots/')
 os.makedirs(plot_folder, exist_ok=True)
-file_path = os.path.join(folder, "results_theta_90.csv")
+file_path = os.path.join(folder, "results_theta_67.5.csv")
 
 # Extract angle and type (phi or theta) from file name
 filename_parts = os.path.basename(file_path).split('_')
@@ -39,8 +39,8 @@ results['parallel_error'] = parallel_error
 results['perpendicular_error'] = perpendicular_error
 
 # Calculate theta_err and phi_err
-theta_err = results['theta_est'] - results['theta_true']
-phi_err = results['phi_est'] - results['phi_true']
+theta_err = results['theta_true'] - results['theta_est']
+phi_err = results['phi_true'] - results['phi_est']
 
 # Save the updated CSV file
 results.to_csv(file_path, index=False)
@@ -54,24 +54,32 @@ def save_plot():
     plt.savefig(os.path.join(plot_folder, filename))
     plt.show()
 
-# Scatter plot: coords nm
+# Scatter plot: x coords nm
 plt.figure(figsize=(8, 5))
 plt.scatter(results['x_true'], results['x_est'], color='blue', alpha=0.6)
 plt.xlabel('x_true nm')
 plt.ylabel('x_est nm')
-plt.title(f'{angle_type} = {angle_value} phi = [0, 4, 8, ..., 360]')
+plt.title(f'{angle_type} = {angle_value} theta = [0, 2, 4, ..., 90]')
 plt.grid(True)
 save_plot()
 
+# Scatter plot: y coords nm
+plt.figure(figsize=(8, 5))
+plt.scatter(results['y_true'], results['y_est'], color='blue', alpha=0.6)
+plt.xlabel('y_true nm')
+plt.ylabel('y_est nm')
+plt.title(f'{angle_type} = {angle_value} phi = [0, 4, 8, ..., 360]')
+plt.grid(True)
+save_plot()
 
 # Scatter plot: coords pix
-plt.figure(figsize=(8, 5))
-plt.scatter(results['x_true']/51, results['x_est']/51, color='blue', alpha=0.6)
-plt.xlabel('x_true [pix]')
-plt.ylabel('x_est [pix]')
-plt.title(f'{angle_type} = {angle_value} phi = [0, 4, 8, ..., 360]')
-plt.grid(True)
-save_plot()
+#plt.figure(figsize=(8, 5))
+#plt.scatter(results['x_true']/51, results['x_est']/51, color='blue', alpha=0.6)
+#plt.xlabel('x_true [pix]')
+#plt.ylabel('x_est [pix]')
+#plt.title(f'{angle_type} = {angle_value} theta = [0, 2, 4, ..., 90]')
+#plt.grid(True)
+#save_plot()
 
 # Scatter plot: angles rad
 plt.figure(figsize=(8, 5))
@@ -167,4 +175,24 @@ plt.ylabel('Counts')
 plt.title(f'{angle_type} = {angle_value} phi = [0, 4, 8, ..., 360]')
 plt.grid(True)
 annotate_stats(y_err)
+save_plot()
+
+# Histogram: delta theta error
+plt.figure(figsize=(8, 5))
+plt.hist(theta_err, bins=30, color='blue', alpha=0.7, edgecolor='black')
+plt.xlabel('theta error [nm]')
+plt.ylabel('Counts')
+plt.title(f'{angle_type} = {angle_value} phi = [0, 4, 8, ..., 360]')
+plt.grid(True)
+annotate_stats(theta_err)
+save_plot()
+
+# Histogram: delta phi error
+plt.figure(figsize=(8, 5))
+plt.hist(phi_err, bins=30, color='red', alpha=0.7, edgecolor='black')
+plt.xlabel('phi error [nm]')
+plt.ylabel('Counts')
+plt.title(f'{angle_type} = {angle_value} phi = [0, 4, 8, ..., 360]')
+plt.grid(True)
+annotate_stats(phi_err)
 save_plot()
