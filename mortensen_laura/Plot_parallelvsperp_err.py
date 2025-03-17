@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 # File path
 folder = os.path.expanduser('~/Documents/Hinterer/fixed-dipole-issue/mortensen_laura')
-plot_folder = os.path.join(folder, 'plots/')
+plot_folder = os.path.join(folder, 'plots/test_powell&trustConstr_170325')
 os.makedirs(plot_folder, exist_ok=True)
 file_path = os.path.join(folder, "results_theta_67.5.csv")
 
@@ -59,7 +59,7 @@ plt.figure(figsize=(8, 5))
 plt.scatter(results['x_true'], results['x_est'], color='blue', alpha=0.6)
 plt.xlabel('x_true nm')
 plt.ylabel('x_est nm')
-plt.title(f'{angle_type} = {angle_value} theta = [0, 2, 4, ..., 90]')
+plt.title(f'{angle_type} = {angle_value} phi = [0, 4, 8, ..., 360]')
 plt.grid(True)
 save_plot()
 
