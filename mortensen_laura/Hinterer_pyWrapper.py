@@ -1,45 +1,39 @@
-import numpy as np
+import numpy as np 
 import sys
 import datetime
 import matplotlib.pyplot as plt
 from MLEwT_fixed import dipdistr, MLEwT
+from oct2py import Oct2Py
 
-class DipolePSFGenerator:
-    def __init__(self, image_size, pixel_size, wavelength, n_objective, n_sample, magnification, NA, norm_file, verbose=False):
-        self.image_size = image_size
-        self.pixel_size = pixel_size
-        self.wavelength = wavelength
-        self.n_sample = n_sample
-        self.n_objective = n_objective
-        self.magnification = magnification
-        self.NA = NA
-        self.norm_file = norm_file
-        self.verbose = verbose
-        
-        # Load normalization file
-        self.norm_data = np.load(norm_file)
-        
-        # Initialize dipole distribution model
-        self.DD = dipdistr(wavelength, n_objective, n_sample, magnification, NA, norm_file)
+class DipolePSFSimulator:
+    def __init__(self, matlab_script_path):
+        self.oc = Oct2Py()
+        self.oc.addpath(matlab_script_path)
+
+    def simulate(self, output_folder, inclination_deg, azimuth_deg, run):
+        """
+        Calls the MATLAB function to generate a dipole PSF.
+
+        :param output_folder: Path to save the output images
+        :param inclination_deg: Inclination angle in degrees
+        :param azimuth_deg: Azimuth angle in degrees
+        :param run: Run number
+        :return: Path of the generated image
+        """
+        output_path = self.oc.generator_pyFunction(output_folder, inclination_deg, azimuth_deg, run)
+        return output_path
+
+# Example usage
+if __name__ == "__main__":
+    matlab_folder = '/home/wgq72938/Documents/Hinterer/fixed-dipole-issue/fixed-dipole-issue/hinterer'
+    output_folder = '/home/wgq72938/Documents/Hinterer/fixed-dipole-issue/mortensen_laura/results/hinterer_generator'
+
+    simulator = DipolePSFSimulator(matlab_folder)
+    output_file = simulator.simulate(output_folder, 45, 90, 1)
+    print("Generated PSF image:", output_file)
+
     
-    def __call__(self, phi, theta, x_pos, y_pos, n_photons):
-        
-        # Create position vector
-        # x_pos and y_pos are in nm
-        posvec = np.arange(-(self.image_size[0]-1)/2, self.image_size[0]/2) * self.pixel_size
-        dipole_psf = np.zeros(self.image_size)
-        
-        # Generate PSF
-        for i in range(self.image_size[0]):
-            for j in range(self.image_size[1]):
-                dipole_psf[j, i] = self.DD.PSF_approx(posvec[i] - x_pos, 
-                                                      posvec[j] - y_pos,
-                                                      phi, theta, 
-                                                      )
-        
-        dipole_psf = dipole_psf / dipole_psf.sum() * n_photons
-        
-        return dipole_psf
+'''
 
     def mortensen_fit(self, dipole_psf, init_theta, init_phi):
         
@@ -55,15 +49,12 @@ class DipolePSFGenerator:
         mux_nm = np.random.uniform(0 - self.pixel_size/2, 0 + self.pixel_size/2)    
         muy_nm = np.random.uniform(0 - self.pixel_size/2, 0 + self.pixel_size/2)    
         
-        #init_theta = np.random.uniform(0, np.pi/2)
-        #init_phi = np.random.uniform(0, 2 * np.pi)
-        init_new1 = np.random.uniform(-1, 1)
-        init_new2 = np.random.uniform(-1, 1)
-        init_new3 = np.random.uniform(0, 1)
+        init_theta = np.random.uniform(0, np.pi/2)
+        init_phi = np.random.uniform(0, 2 * np.pi)
 
         init_photons = np.sum(dipole_psf)
         
-        initvals = np.array([init_new1, init_new2, init_new3, mux_nm, muy_nm, init_photons])
+        initvals = np.array([init_phi, init_theta, mux_nm, muy_nm, init_photons])
         
         #initpix = (self.image_size[0] // 2, self.image_size[1] // 2) # (ypix, xpix)
         #print(f"initial values for the center pixel (ypixel,xpixel): {initpix}")
@@ -119,3 +110,5 @@ if __name__ == "__main__":
     
     print(f"Results from the Mortensen fit are:  {', '.join(map(str, results))}")    
     print(f"Ground truth are: {', '.join(map(str, ground_truth))}")
+
+'''

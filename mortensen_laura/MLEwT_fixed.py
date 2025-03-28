@@ -25,7 +25,7 @@ from numpy import fabs, diag, around, exp, sqrt, log
 from numpy import sin, cos
 from numpy.linalg import inv
 from scipy.special import i1, jn, gamma, erf, gammaln
-from scipy.optimize import fmin_powell, minimize, BFGS
+from scipy.optimize import fmin_powell, minimize, BFGS, least_squares
 from numint import qromb
 #from numint import qromb
 
@@ -754,12 +754,23 @@ class LogLikelihood:
         
         counts=self.counts
         # Transform the reparametrised theta and phi in the original theta and phi here
-        #phi_conv = np.arctan2(x[1], x[0])%(2*np.pi)  # Reconvert x[0], x[1] to phi check the order of 0 and 1 needs to be the same as est
-        #theta_conv = 0.5 * np.arccos(x[2])%(np.pi/2)  # Reconvert x[2] to theta
+        #phi,theta,mux_nm,muy_nm,n_photons=x
 
-        # Alternative reparametrisation conversion
-        phi_conv = np.arctan2(x[1], x[0])%(2*np.pi)
-        theta_conv = np.arccos(np.clip(x[2], -1, 1))
+        if abs(x[0]) > 1:
+          print('Problematic x[0]')
+          print(x[0])
+          print()
+        if abs(x[1]) > 1:
+          print('Problematic x[1]')
+          print(x[1])
+          print()
+        if abs(x[2]) > 1:
+          print('Problematic x[2]')
+          print(x[2])
+          print()
+
+        phi_conv = np.arctan2(x[1], x[0]) % (2*np.pi)  # Reconvert x[0], x[1] to phi check the order of 0 and 1 needs to be the same as est
+        theta_conv = 1.0 * np.arccos(x[2]) % (np.pi/2)  # Reconvert x[2] to theta
         
         mux_nm = x[3]
         muy_nm = x[4]
@@ -863,107 +874,94 @@ class MLEwT:
 
     def Estimate(self,datamatrix):
         
-        # Entire data matrix
+         # Entire data matrix
         counts=datamatrix
+        #print(f"counts inside Estimate() 1: {counts}, shape: {counts.shape}")
+
         
         # Transformation of initial values
         if not isinstance(self.initvals, (list, np.ndarray)):
             raise ValueError(f"Expected initvals to be a list or np.ndarray of 6 elements, but got {self.initvals} {type(self.initvals)}")
         
-        # Reparametrise phi -> sin(phi), cos(phi) this adds a parameter to the fitting
-                       #theta -> cos(2*theta)
         pinit=zeros(6)
-        pinit[0] = np.cos(self.initvals[0] % (2 * np.pi))       #self.initvals[0] phi reparametrised in cos(phi)
-        pinit[1] = np.sin(self.initvals[0] % (2 * np.pi))       #self.initvals[1] was theta, now reparametrised phi in sin(phi)
-        pinit[2] = np.cos(2 * self.initvals[1] % (np.pi / 2))   #reparametrised theta in cos(2theta)
-        pinit[3] = self.initvals[2]               # mux_nm
-        pinit[4] = self.initvals[3]               # muy_nm
-        pinit[5] = self.initvals[4]               #sqrt(self.initvals[4]) # n_photons
+        pinit[0] = self.initvals[0]                      # new1
+        pinit[1] = self.initvals[1]                      # new2
+        pinit[2] = self.initvals[2]                      # new3
+        pinit[3] = self.initvals[3]                      # mux_nm
+        pinit[4] = self.initvals[4]                      # muy_nm
+        pinit[5] = self.initvals[5]                      # n_photons       
 
-        #print(f"pinit is: {pinit}")
-        
-        
         # Create instance of LogLikelihood object
-        self.ll=LogLikelihood(counts, self.psf_generator)
-        best_result = None
-        best_ll_value = np.inf
+        ll=LogLikelihood(counts, self.psf_generator)
 
         # Perform maximization of the log-likelihood using Powell's method
-        #xopt, fopt, xi, direc, iter, funcalls, warnflag=\
-        bounds = [(-1, 1), (-1, 1), (-1, 1), (-433, 433), (-433, 433), (1e-6, None)]
-
+        bounds = [(-1, 1), (-1, 1), (0, 1), (-51*18/2, 51*18/2), (-51*18/2, 51*18/2), (1e-6, 1e10)]
         options = {
-             'maxiter': 100000000,  # Maximum number of iterations
-             'disp': True,          # Enable display of progress
+#           'maxiter': 5,
         }
-        pinit[3] = np.clip(pinit[2], -433, 433)  # Ensure x (mux_nm) is within bounds
-        pinit[4] = np.clip(pinit[3], -433, 433)  # Ensure y (muy_nm) is within bounds
-        self.initvals[2] = np.clip(self.initvals[2], -433, 433)
-        self.initvals[3] = np.clip(self.initvals[3], -433, 433)
 
-        #res=fmin_powell(ll.Value,pinit, ftol=0.0001,maxiter=15,full_output=1, disp=False)
-        res1 = minimize(self.ll.Value, pinit, method='Powell', bounds=bounds, options=options)
-        first_attempt = res1.x
-        first_cost = res1.fun
-
-        # Check if theta is close to 90 degrees
-        condition_value = abs(0.5 * np.arccos(first_attempt[2]) - np.pi / 2)
-        print("condition_value is: ", condition_value)
-
-        condition1 = condition_value >= 0.1 * np.pi / 180
-        print("condition1 is: ", condition1)
-        #condition1 = abs(0.5 * np.arccos(first_attempt[2]) - np.pi / 2) >= 0.1 * np.pi / 180
-
-        if condition1:  # Good result, no need for additional attempts
-            best_result = first_attempt
-        else:
-            # Prepare attempts
-            attempts = [first_attempt]
-            costs = [first_cost]
-
-            # Second attempt (flip phi)
-            second_start = pinit.copy()
-            second_start[0] *= -1
-            second_start[1] *= -1
-            res2 = minimize(self.ll.Value, second_start, method='Powell', bounds=bounds, options=options)
-            attempts.append(res2.x)
-            costs.append(res2.fun)
-
-            # Third attempt (flip theta)
-            third_start = pinit.copy()
-            third_start[2] *= -1
-            res3 = minimize(self.ll.Value, third_start, method='Powell', bounds=bounds, options=options)
-            attempts.append(res3.x)
-            costs.append(res3.fun)
-
-            # Fourth attempt (flip both theta and phi)
-            fourth_start = pinit.copy()
-            fourth_start[0] *= -1
-            fourth_start[1] *= -1
-            fourth_start[2] *= -1
-            res4 = minimize(self.ll.Value, fourth_start, method='Powell', bounds=bounds, options=options)
-            attempts.append(res4.x)
-            costs.append(res4.fun)
-
-            # Select the best attempt
-            best_index = np.argmin(costs)
-            best_result = attempts[best_index]
+        # Store all parameters and scores
+        params = []
+        scores = []
         
-        # Refinement using trust-constr if needed
-        options = {'disp': self._verbose}
-        res_refined = minimize(self.ll.Value, best_result, method='trust-constr', hess=self.zero_hessian, bounds=bounds, options=options)
-        best_result = res_refined.x
+        # First attempt
+        print('    Attempt 1')
+        res = minimize(ll.Value, pinit, method='Powell', bounds=bounds, options=options)
+        first_attempt_params = res.x
+        first_attempt_score = ll.Value(first_attempt_params)
+        params.append(first_attempt_params)
+        scores.append(first_attempt_score)
+        
+        # Generate modified initial values for subsequent attempts
+        phi_est = np.arctan2(first_attempt_params[1], first_attempt_params[0]) % (2*np.pi)
+        theta_est = np.arccos(first_attempt_params[2]) % (np.pi/2)
 
-        # Transform results back to original parameters
-        est = best_result
-        self.phi_conv = np.arctan2(est[1], est[0])
-        self.theta_conv = np.arccos(est[2])
-        self.mux_nm = est[3]
-        self.muy_nm = est[4]
-        n_photons = est[5]
+        modified_inits = [
+            first_attempt_params.copy(),  # Second attempt (theta - π/2)
+            first_attempt_params.copy(),  # Third attempt (phi - π)
+            first_attempt_params.copy(),  # Fourth attempt (theta + π/2, phi - π)
+        ]
+
+        # Second attempt: shift theta by -π/2
+        modified_inits[0][2] = np.clip(np.cos(theta_est - np.pi/2), 0, 1)
+
+        # Third attempt: shift phi by -π
+        modified_inits[1][0] = np.clip(np.sin(theta_est) * np.cos(phi_est - np.pi), -1, 1)
+        modified_inits[1][1] = np.clip(np.sin(theta_est) * np.sin(phi_est - np.pi), -1, 1)
+
+        # Fourth attempt: shift theta by π/2 and phi by -π
+        modified_inits[2][2] = np.clip(np.cos(theta_est + np.pi/2), 0, 1)
+        modified_inits[2][0] = np.clip(np.sin(theta_est + np.pi/2) * np.cos(phi_est - np.pi), -1, 1)
+        modified_inits[2][1] = np.clip(np.sin(theta_est + np.pi/2) * np.sin(phi_est - np.pi), -1, 1)
+
+        for attempt in range(2, 5):
+            print(f'    Attempt {attempt}')
+            res = minimize(ll.Value, modified_inits[attempt - 2], method='Powell', bounds=bounds, options=options)
+            current_params = res.x
+            current_score = ll.Value(current_params)
+            params.append(current_params)
+            scores.append(current_score)
+
+        # Fifth attempt (random initial values again)
+        print('    Attempt 5')
+        random_init = np.array([np.random.uniform(low, high) for low, high in bounds])
+        res = minimize(ll.Value, random_init, method='Powell', bounds=bounds, options=options)
+        last_attempt_params = res.x
+        last_attempt_score = ll.Value(last_attempt_params)
+        params.append(last_attempt_params)
+        scores.append(last_attempt_score)
+        
+        # Find the best solution from all attempts
+        min_score_index = np.argmin(scores)
+        winning_params = params[min_score_index]
+        
+        self.phi_conv = np.arctan2(winning_params[1], winning_params[0]) % (2*np.pi)
+        self.theta_conv = np.arccos(winning_params[2]) % (np.pi/2)
+        self.mux_nm = winning_params[3]
+        self.muy_nm = winning_params[4]
+        n_photons = winning_params[5]
 
         results = [self.phi_conv, self.theta_conv, self.mux_nm, self.muy_nm, n_photons]
-
         return results
         
         # Convert estimates
