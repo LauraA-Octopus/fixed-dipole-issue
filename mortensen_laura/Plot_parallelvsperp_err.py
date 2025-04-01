@@ -4,10 +4,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # File path
-folder = os.path.expanduser('~/Documents/Hinterer/fixed-dipole-issue/mortensen_laura/plots/test_newReparam&condition2_Powell&trustConstr_180325')
+folder = os.path.expanduser('~/Documents/Hinterer/fixed-dipole-issue/mortensen_laura/plots/test_5repsFit_280325')
 plot_folder = os.path.join(folder, '')
 os.makedirs(plot_folder, exist_ok=True)
-file_path = os.path.join(folder, "results_theta_67.5.csv")
+file_path = os.path.join(folder, "results_theta_90.csv")
 
 # Extract angle and type (phi or theta) from file name
 filename_parts = os.path.basename(file_path).split('_')

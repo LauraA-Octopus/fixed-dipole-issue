@@ -895,9 +895,10 @@ class MLEwT:
         ll=LogLikelihood(counts, self.psf_generator)
 
         # Perform maximization of the log-likelihood using Powell's method
-        bounds = [(-1, 1), (-1, 1), (0, 1), (-51*18/2, 51*18/2), (-51*18/2, 51*18/2), (1e-6, 1e10)]
+        bounds = [(-1, 1), (-1, 1), (0, 1), (-51*18/2, 51*18/2), (-51*18/2, 51*18/2), (1, 1e10)]
         options = {
-#           'maxiter': 5,
+            'xtol': 1e-3,
+            'ftol': 1e-3,
         }
 
         # Store all parameters and scores
@@ -923,16 +924,16 @@ class MLEwT:
         ]
 
         # Second attempt: shift theta by -π/2
-        modified_inits[0][2] = np.clip(np.cos(theta_est - np.pi/2), 0, 1)
+        modified_inits[0][2] = np.cos(theta_est - np.pi/2)
 
         # Third attempt: shift phi by -π
-        modified_inits[1][0] = np.clip(np.sin(theta_est) * np.cos(phi_est - np.pi), -1, 1)
-        modified_inits[1][1] = np.clip(np.sin(theta_est) * np.sin(phi_est - np.pi), -1, 1)
+        modified_inits[1][0] = np.sin(theta_est) * np.cos(phi_est - np.pi)
+        modified_inits[1][1] = np.sin(theta_est) * np.sin(phi_est - np.pi)
 
         # Fourth attempt: shift theta by π/2 and phi by -π
-        modified_inits[2][2] = np.clip(np.cos(theta_est + np.pi/2), 0, 1)
-        modified_inits[2][0] = np.clip(np.sin(theta_est + np.pi/2) * np.cos(phi_est - np.pi), -1, 1)
-        modified_inits[2][1] = np.clip(np.sin(theta_est + np.pi/2) * np.sin(phi_est - np.pi), -1, 1)
+        modified_inits[2][2] = np.cos(theta_est - np.pi/2)
+        modified_inits[2][0] = np.sin(theta_est - np.pi/2) * np.cos(phi_est - np.pi)
+        modified_inits[2][1] = np.sin(theta_est - np.pi/2) * np.sin(phi_est - np.pi)
 
         for attempt in range(2, 5):
             print(f'    Attempt {attempt}')
